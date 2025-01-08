@@ -55,10 +55,8 @@ var (
 )
 
 func init() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	// Load environment variables from .env file if it exists
+	godotenv.Load() // Ignore error - will fall back to system env vars if file not found
 
 	config = Config{
 		TelegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),

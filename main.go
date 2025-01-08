@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -56,7 +57,9 @@ var (
 
 func init() {
 	// Load environment variables from .env file if it exists
-	godotenv.Load() // Ignore error - will fall back to system env vars if file not found
+	if err := godotenv.Load(); err != nil {
+		log.Printf("[System] No .env file found, using system environment variables")
+	}
 
 	config = Config{
 		TelegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
@@ -69,7 +72,7 @@ func init() {
 
 	// Validate required environment variables
 	if config.TelegramToken == "" || config.OpenRouterAPIKey == "" || config.RedisPass == "" {
-		log.Fatal("Missing required environment variables")
+		log.Fatal("[Error] Missing required environment variables")
 	}
 
 	// Initialize Redis client
@@ -81,19 +84,16 @@ func init() {
 }
 
 func logMessage(userID int64, username, messageType, content string) {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	logEntry := fmt.Sprintf("[%s] User %d (@%s) | %s: %s\n", timestamp, userID, username, messageType, content)
+	log.Printf("[User %d (@%s)] %s: %s", userID, username, messageType, content)
+}
 
-	f, err := os.OpenFile("message_logs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Printf("Error opening log file: %v", err)
-		return
-	}
-	defer f.Close()
+func logOpenRouterRequest(userID int64, username string, reqBody interface{}) {
+	reqJSON, _ := json.Marshal(reqBody)
+	log.Printf("[OpenRouter Request] User %d (@%s): %s", userID, username, string(reqJSON))
+}
 
-	if _, err := f.WriteString(logEntry); err != nil {
-		log.Printf("Error writing to log file: %v", err)
-	}
+func logOpenRouterResponse(userID int64, username string, statusCode int, respBody []byte) {
+	log.Printf("[OpenRouter Response] User %d (@%s) Status %d: %s", userID, username, statusCode, string(respBody))
 }
 
 func getConversationHistory(ctx context.Context, userID int64) ([]Message, error) {
@@ -149,7 +149,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Handle restart conversation button
 	if msg.Text == "🔄 Restart Conversation" {
 		if err := clearConversationHistory(context.Background(), userID); err != nil {
-			log.Printf("Error clearing conversation: %v", err)
+			log.Printf("[Error] User %d (@%s): Failed to clear conversation: %v", userID, username, err)
 		}
 		logMessage(userID, username, "system", "Conversation reset")
 		_, err := msg.Reply(b, "Conversation has been reset. Send a new message to start.", &gotgbot.SendMessageOpts{
@@ -164,7 +164,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Get conversation history
 	history, err := getConversationHistory(context.Background(), userID)
 	if err != nil {
-		log.Printf("Error getting conversation history: %v", err)
+		log.Printf("[Error] User %d (@%s): Failed to get conversation history: %v", userID, username, err)
 		history = []Message{}
 	}
 
@@ -179,16 +179,18 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	reqData, err := json.Marshal(reqBody)
 	if err != nil {
-		log.Printf("Error marshaling request: %v", err)
+		log.Printf("[Error] User %d (@%s): Failed to marshal request: %v", userID, username, err)
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getRestartKeyboard(),
 		})
 		return err
 	}
 
+	logOpenRouterRequest(userID, username, reqBody)
+
 	req, err := http.NewRequestWithContext(context.Background(), "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(reqData))
 	if err != nil {
-		log.Printf("Error creating request: %v", err)
+		log.Printf("[Error] User %d (@%s): Failed to create request: %v", userID, username, err)
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getRestartKeyboard(),
 		})
@@ -200,7 +202,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Error calling OpenRouter API: %v", err)
+		log.Printf("[Error] User %d (@%s): Failed to call OpenRouter API: %v", userID, username, err)
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getRestartKeyboard(),
 		})
@@ -208,8 +210,19 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 	defer resp.Body.Close()
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[Error] User %d (@%s): Failed to read response body: %v", userID, username, err)
+		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getRestartKeyboard(),
+		})
+		return err
+	}
+
+	logOpenRouterResponse(userID, username, resp.StatusCode, respBody)
+
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("OpenRouter API returned status: %d", resp.StatusCode)
+		log.Printf("[Error] User %d (@%s): OpenRouter API returned status: %d", userID, username, resp.StatusCode)
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getRestartKeyboard(),
 		})
@@ -217,8 +230,8 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	var openRouterResp OpenRouterResponse
-	if err := json.NewDecoder(resp.Body).Decode(&openRouterResp); err != nil {
-		log.Printf("Error decoding response: %v", err)
+	if err := json.Unmarshal(respBody, &openRouterResp); err != nil {
+		log.Printf("[Error] User %d (@%s): Failed to decode response: %v", userID, username, err)
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getRestartKeyboard(),
 		})
@@ -235,7 +248,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 		// Save updated conversation history
 		if err := saveConversationHistory(context.Background(), userID, history); err != nil {
-			log.Printf("Error saving conversation history: %v", err)
+			log.Printf("[Error] User %d (@%s): Failed to save conversation history: %v", userID, username, err)
 		}
 
 		// Log AI response
@@ -276,19 +289,19 @@ func main() {
 
 	// Test Redis connection
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Fatal("Error connecting to Redis:", err)
+		log.Fatal("[Error] Failed to connect to Redis: ", err)
 	}
 
 	// Create bot instance
 	b, err := gotgbot.NewBot(config.TelegramToken, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("[Error] Failed to create bot instance: ", err)
 	}
 
 	// Create dispatcher
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		Error: func(b *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
-			log.Println("an error occurred while handling update:", err.Error())
+			log.Printf("[Error] Failed to handle update: %v", err.Error())
 			return ext.DispatcherActionNoop
 		},
 	})
@@ -308,9 +321,9 @@ func main() {
 		DropPendingUpdates: true,
 	})
 	if err != nil {
-		log.Fatal("failed to start polling:", err)
+		log.Fatal("[Error] Failed to start polling: ", err)
 	}
-	log.Printf("Bot started as @%s", b.User.Username)
+	log.Printf("[System] Bot started as @%s", b.User.Username)
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -318,6 +331,6 @@ func main() {
 
 	// Wait for interrupt signal
 	<-sigChan
-	log.Println("Shutting down...")
+	log.Println("[System] Shutting down...")
 	cancel()
 }

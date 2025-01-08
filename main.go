@@ -64,6 +64,7 @@ func init() {
 	config = Config{
 		TelegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
 		OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
+		OpenRouterModel:  os.Getenv("OPENROUTER_MODEL"),
 		RedisHost:        os.Getenv("REDIS_HOST"),
 		RedisPort:        os.Getenv("REDIS_PORT"),
 		RedisDB:          os.Getenv("REDIS_DB"),
@@ -174,7 +175,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Prepare OpenRouter API request
 	client := &http.Client{Timeout: 30 * time.Second}
 	reqBody := OpenRouterRequest{
-		Model:    "mistralai/mistral-7b-instruct",
+		Model:    OpenRouterModel,
 		Messages: history,
 	}
 	reqData, err := json.Marshal(reqBody)

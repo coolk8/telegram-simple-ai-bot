@@ -23,6 +23,7 @@ import (
 type Config struct {
 	TelegramToken    string
 	OpenRouterAPIKey string
+	OpenRouterModel  string
 	RedisHost        string
 	RedisPort        string
 	RedisDB          string
@@ -175,7 +176,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Prepare OpenRouter API request
 	client := &http.Client{Timeout: 30 * time.Second}
 	reqBody := OpenRouterRequest{
-		Model:    OpenRouterModel,
+		Model:    config.OpenRouterModel,
 		Messages: history,
 	}
 	reqData, err := json.Marshal(reqBody)

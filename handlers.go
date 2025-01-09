@@ -8,6 +8,20 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 )
 
+func isUserAllowed(userID int64) bool {
+	// If no allowed users are configured, allow everyone
+	if len(config.AllowedUsers) == 0 {
+		return true
+	}
+
+	// Check if user is in allowed list
+	for _, allowedID := range config.AllowedUsers {
+		if allowedID == userID {
+			return true
+		}
+	}
+	return false
+}
 
 func getRestartKeyboard() *gotgbot.ReplyKeyboardMarkup {
 	return &gotgbot.ReplyKeyboardMarkup{
@@ -26,6 +40,13 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	username := msg.From.Username
 	if username == "" {
 		username = "unknown"
+	}
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := msg.Reply(b, "Sorry, you are not authorized to use this bot.", nil)
+		return err
 	}
 
 	// Handle restart conversation button
@@ -94,7 +115,17 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func handleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	logMessage(msg.From.Id, msg.From.Username, "command", "/start")
+	userID := msg.From.Id
+	username := msg.From.Username
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := msg.Reply(b, "Sorry, you are not authorized to use this bot.", nil)
+		return err
+	}
+
+	logMessage(userID, username, "command", "/start")
 	_, err := msg.Reply(b, "Hi! I am your AI assistant. Send me a message and I will respond using AI.", &gotgbot.SendMessageOpts{
 		ReplyMarkup: getRestartKeyboard(),
 	})
@@ -103,7 +134,17 @@ func handleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	logMessage(msg.From.Id, msg.From.Username, "command", "/help")
+	userID := msg.From.Id
+	username := msg.From.Username
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := msg.Reply(b, "Sorry, you are not authorized to use this bot.", nil)
+		return err
+	}
+
+	logMessage(userID, username, "command", "/help")
 	_, err := msg.Reply(b, "Available commands:\n"+
 		"/start - Start the bot\n"+
 		"/help - Show this help message\n"+
@@ -116,7 +157,17 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 
 func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
-	logMessage(msg.From.Id, msg.From.Username, "command", "/set_models")
+	userID := msg.From.Id
+	username := msg.From.Username
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := msg.Reply(b, "Sorry, you are not authorized to use this bot.", nil)
+		return err
+	}
+
+	logMessage(userID, username, "command", "/set_models")
 
 	// Create inline keyboard with model options
 	var buttons [][]gotgbot.InlineKeyboardButton
@@ -136,6 +187,16 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 	callback := ctx.CallbackQuery
 	userID := callback.From.Id
 	username := callback.From.Username
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+			Text:      "Sorry, you are not authorized to use this bot.",
+			ShowAlert: true,
+		})
+		return err
+	}
 
 	data := callback.Data
 	if len(data) > 6 && data[:6] == "model:" {

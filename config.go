@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -18,6 +19,7 @@ type Config struct {
 	RedisDB          string
 	RedisPass        string
 	AvailableModels  []string
+	AllowedUsers     []int64
 }
 
 var config Config
@@ -34,6 +36,17 @@ func initConfig() {
 		availableModels = strings.Split(models, ",")
 	}
 
+	// Parse allowed users from environment variable
+	var allowedUsers []int64
+	if users := os.Getenv("ALLOWED_USERS"); users != "" {
+		userStrings := strings.Split(users, ",")
+		for _, userStr := range userStrings {
+			if userID, err := strconv.ParseInt(strings.TrimSpace(userStr), 10, 64); err == nil {
+				allowedUsers = append(allowedUsers, userID)
+			}
+		}
+	}
+
 	config = Config{
 		TelegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
 		OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
@@ -44,6 +57,7 @@ func initConfig() {
 		RedisDB:          os.Getenv("REDIS_DB"),
 		RedisPass:        os.Getenv("REDIS_PASS"),
 		AvailableModels:  availableModels,
+		AllowedUsers:     allowedUsers,
 	}
 
 	// Validate required environment variables

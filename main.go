@@ -24,6 +24,7 @@ type Config struct {
 	TelegramToken    string
 	OpenRouterAPIKey string
 	OpenRouterModel  string
+	SystemPrompt     string
 	RedisHost        string
 	RedisPort        string
 	RedisDB          string
@@ -66,6 +67,7 @@ func init() {
 		TelegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
 		OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
 		OpenRouterModel:  os.Getenv("OPENROUTER_MODEL"),
+		SystemPrompt:     os.Getenv("SYSTEM_PROMPT"),
 		RedisHost:        os.Getenv("REDIS_HOST"),
 		RedisPort:        os.Getenv("REDIS_PORT"),
 		RedisDB:          os.Getenv("REDIS_DB"),
@@ -168,6 +170,11 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err != nil {
 		log.Printf("[Error] User %d (@%s): Failed to get conversation history: %v", userID, username, err)
 		history = []Message{}
+	}
+
+	// If history is empty, add system prompt if configured
+	if len(history) == 0 && config.SystemPrompt != "" {
+		history = append(history, Message{Role: "system", Content: config.SystemPrompt})
 	}
 
 	// Add user message to history

@@ -47,3 +47,21 @@ func clearConversationHistory(ctx context.Context, userID int64) error {
 	key := fmt.Sprintf("conversation:%d", userID)
 	return rdb.Del(ctx, key).Err()
 }
+
+func getUserModel(ctx context.Context, userID int64) (string, error) {
+	key := fmt.Sprintf("user:%d:model", userID)
+	model, err := rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		// If no model is set, return default model from config
+		return config.OpenRouterModel, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis get error: %w", err)
+	}
+	return model, nil
+}
+
+func setUserModel(ctx context.Context, userID int64, model string) error {
+	key := fmt.Sprintf("user:%d:model", userID)
+	return rdb.Set(ctx, key, model, 0).Err()
+}

@@ -10,10 +10,16 @@ import (
 	"time"
 )
 
-func callOpenRouter(ctx context.Context, userID int64, username string, messages []Message) (string, error) {
+func callOpenRouter(ctx context.Context, userID int64, username string, messages []Message, model string) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
+
+	// If no model is specified, use the default from config
+	if model == "" {
+		model = config.OpenRouterModel
+	}
+
 	reqBody := OpenRouterRequest{
-		Model:    config.OpenRouterModel,
+		Model:    model,
 		Messages: messages,
 	}
 	reqData, err := json.Marshal(reqBody)
@@ -21,7 +27,8 @@ func callOpenRouter(ctx context.Context, userID int64, username string, messages
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	logOpenRouterRequest(userID, username, reqBody)
+	// Use the logging functions from logger.go
+	logMessage(userID, username, "openrouter_request", fmt.Sprintf("Model: %s, Messages: %d", reqBody.Model, len(reqBody.Messages)))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(reqData))
 	if err != nil {
@@ -42,7 +49,8 @@ func callOpenRouter(ctx context.Context, userID int64, username string, messages
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	logOpenRouterResponse(userID, username, resp.StatusCode, respBody)
+	// Use the logging functions from logger.go
+	logMessage(userID, username, "openrouter_response", fmt.Sprintf("Status: %d, Response length: %d", resp.StatusCode, len(respBody)))
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("OpenRouter API returned status: %d", resp.StatusCode)

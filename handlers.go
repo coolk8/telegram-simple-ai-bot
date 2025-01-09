@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 )
+
 
 func getRestartKeyboard() *gotgbot.ReplyKeyboardMarkup {
 	return &gotgbot.ReplyKeyboardMarkup{
@@ -56,8 +58,15 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Add user message to history
 	history = append(history, Message{Role: "user", Content: msg.Text})
 
-	// Call OpenRouter API
-	aiResponse, err := callOpenRouter(context.Background(), userID, username, history)
+	// Get user's preferred model
+	userModel, err := getUserModel(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get user model")
+		userModel = config.OpenRouterModel // fallback to default
+	}
+
+	// Call OpenRouter API with user's model
+	aiResponse, err := callOpenRouter(context.Background(), userID, username, history, userModel)
 	if err != nil {
 		logMessage(userID, username, "error", err.Error())
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
@@ -95,8 +104,77 @@ func handleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	logMessage(msg.From.Id, msg.From.Username, "command", "/help")
-	_, err := msg.Reply(b, "Send me any message and I will respond using AI. Use \"🔄 Restart Conversation\" to start a new conversation.", &gotgbot.SendMessageOpts{
+	_, err := msg.Reply(b, "Available commands:\n"+
+		"/start - Start the bot\n"+
+		"/help - Show this help message\n"+
+		"/set_models - Select AI model\n\n"+
+		"Use \"🔄 Restart Conversation\" to start a new conversation.", &gotgbot.SendMessageOpts{
 		ReplyMarkup: getRestartKeyboard(),
 	})
 	return err
+}
+
+func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
+	msg := ctx.EffectiveMessage
+	logMessage(msg.From.Id, msg.From.Username, "command", "/set_models")
+
+	// Create inline keyboard with model options
+	var buttons [][]gotgbot.InlineKeyboardButton
+	for _, model := range config.AvailableModels {
+		buttons = append(buttons, []gotgbot.InlineKeyboardButton{
+			{Text: model, CallbackData: "model:" + model},
+		})
+	}
+
+	_, err := msg.Reply(b, "Choose a model:", &gotgbot.SendMessageOpts{
+		ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
+	})
+	return err
+}
+
+func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
+	callback := ctx.CallbackQuery
+	userID := callback.From.Id
+	username := callback.From.Username
+
+	data := callback.Data
+	if len(data) > 6 && data[:6] == "model:" {
+		selectedModel := data[6:]
+
+		// Save user's model preference
+		if err := setUserModel(context.Background(), userID, selectedModel); err != nil {
+			logMessage(userID, username, "error", "Failed to save model preference")
+			_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+				Text:      "Error saving model preference",
+				ShowAlert: true,
+			})
+			return err
+		}
+
+		// Get the original message
+		msg := callback.Message
+		if msg == nil {
+			return fmt.Errorf("callback message is nil")
+		}
+
+		// Update the message to show selected model
+		_, _, err := b.EditMessageText("Selected model: "+selectedModel, &gotgbot.EditMessageTextOpts{
+			ChatId:      msg.GetChat().Id,
+			MessageId:   msg.GetMessageId(),
+			ParseMode:   "HTML",
+			ReplyMarkup: gotgbot.InlineKeyboardMarkup{},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Show confirmation to user
+		_, err = callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+			Text:      "Model set to: " + selectedModel,
+			ShowAlert: true,
+		})
+		return err
+	}
+
+	return nil
 }

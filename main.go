@@ -44,6 +44,8 @@ func main() {
 	// Add handlers
 	dispatcher.AddHandler(handlers.NewCommand("start", handleStart))
 	dispatcher.AddHandler(handlers.NewCommand("help", handleHelp))
+	dispatcher.AddHandler(handlers.NewCommand("set_models", handleSetModels))
+	dispatcher.AddHandler(handlers.NewCallback(nil, handleCallback))
 	dispatcher.AddHandler(handlers.NewMessage(nil, handleMessage))
 
 	// Create updater

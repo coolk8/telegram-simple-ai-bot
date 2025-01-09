@@ -1,16 +1,5 @@
 package main
 
-// Config holds environment variables
-type Config struct {
-	TelegramToken    string
-	OpenRouterAPIKey string
-	OpenRouterModel  string
-	SystemPrompt     string
-	RedisHost        string
-	RedisPort        string
-	RedisDB          string
-	RedisPass        string
-}
 
 // Message represents a chat message structure
 type Message struct {

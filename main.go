@@ -33,6 +33,23 @@ func main() {
 		log.Fatal("[Error] Failed to create bot instance: ", err)
 	}
 
+	// Set bot commands
+	commands := []gotgbot.BotCommand{
+		{Command: "start", Description: "Start the bot"},
+		{Command: "help", Description: "Show help message"},
+		{Command: "set_models", Description: "Select AI model"},
+	}
+	if _, err := b.SetMyCommands(commands, nil); err != nil {
+		log.Fatal("[Error] Failed to set bot commands: ", err)
+	}
+
+	// Set menu button to show commands
+	if _, err := b.SetChatMenuButton(&gotgbot.SetChatMenuButtonOpts{
+		MenuButton: &gotgbot.MenuButtonCommands{},
+	}); err != nil {
+		log.Fatal("[Error] Failed to set menu button: ", err)
+	}
+
 	// Create dispatcher
 	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
 		Error: func(b *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {

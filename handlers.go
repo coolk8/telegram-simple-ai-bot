@@ -169,15 +169,27 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	logMessage(userID, username, "command", "/set_models")
 
+	// Get user's current model
+	currentModel, err := getUserModel(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get current model")
+		currentModel = ""
+	}
+
 	// Create inline keyboard with model options
 	var buttons [][]gotgbot.InlineKeyboardButton
 	for _, model := range config.AvailableModels {
+		// Add checkmark for current model
+		modelText := model
+		if model == currentModel {
+			modelText = "✅ " + model
+		}
 		buttons = append(buttons, []gotgbot.InlineKeyboardButton{
-			{Text: model, CallbackData: "model:" + model},
+			{Text: modelText, CallbackData: "model:" + model},
 		})
 	}
 
-	_, err := msg.Reply(b, "Choose a model:", &gotgbot.SendMessageOpts{
+	_, err = msg.Reply(b, "Choose a model:", &gotgbot.SendMessageOpts{
 		ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
 	})
 	return err

@@ -74,13 +74,6 @@ bot.exe  # On Windows
 - Simple error handling
 - "Restart Conversation" button to clear chat history
 - Secure Redis connection with password authentication
-- Comprehensive message logging:
-  - All user messages
-  - AI responses
-  - Command usage
-  - Errors
-  - Timestamps and user information
-  - Logs stored in message_logs.txt
 
 ## How It Works
 
@@ -93,7 +86,6 @@ The Redis connection is secured with password authentication to ensure data safe
 - `main.go`: Main bot implementation
 - `go.mod`: Go module definition and dependencies
 - `.env`: Configuration file for API keys and Redis settings
-- `message_logs.txt`: Log file for all bot interactions
 
 ## Error Handling
 

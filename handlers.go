@@ -23,11 +23,17 @@ func isUserAllowed(userID int64) bool {
 	return false
 }
 
-func getRestartKeyboard() *gotgbot.ReplyKeyboardMarkup {
+func getKeyboard(mode string) *gotgbot.ReplyKeyboardMarkup {
+	modeButton := "🖼 Image Mode"
+	if mode == "image" {
+		modeButton = "📝 Text Mode"
+	}
+	
 	return &gotgbot.ReplyKeyboardMarkup{
 		Keyboard: [][]gotgbot.KeyboardButton{
 			{
 				{Text: "🔄 Restart Conversation"},
+				{Text: modeButton},
 			},
 		},
 		ResizeKeyboard: true,
@@ -49,6 +55,34 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
+	// Get user's current mode
+	userMode, err := getUserMode(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get user mode")
+		userMode = "text" // fallback to text mode
+	}
+
+	// Handle mode switching
+	if msg.Text == "🖼 Image Mode" {
+		if err := setUserMode(context.Background(), userID, "image"); err != nil {
+			logMessage(userID, username, "error", "Failed to set user mode")
+		}
+		logMessage(userID, username, "system", "Switched to image mode")
+		_, err := msg.Reply(b, "Switched to image generation mode. Send a text prompt to generate an image.", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard("image"),
+		})
+		return err
+	} else if msg.Text == "📝 Text Mode" {
+		if err := setUserMode(context.Background(), userID, "text"); err != nil {
+			logMessage(userID, username, "error", "Failed to set user mode")
+		}
+		logMessage(userID, username, "system", "Switched to text mode")
+		_, err := msg.Reply(b, "Switched to text mode. Send a message to chat with AI.", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard("text"),
+		})
+		return err
+	}
+
 	// Handle restart conversation button
 	if msg.Text == "🔄 Restart Conversation" {
 		if err := clearConversationHistory(context.Background(), userID); err != nil {
@@ -56,7 +90,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		}
 		logMessage(userID, username, "system", "Conversation reset")
 		_, err := msg.Reply(b, "Conversation has been reset. Send a new message to start.", &gotgbot.SendMessageOpts{
-			ReplyMarkup: getRestartKeyboard(),
+			ReplyMarkup: getKeyboard(userMode),
 		})
 		return err
 	}
@@ -64,7 +98,15 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Log user message
 	logMessage(userID, username, "user_message", msg.Text)
 
-	// Get conversation history
+	if userMode == "image" {
+		// In image mode, treat the message as an image generation prompt
+		_, err = msg.Reply(b, "Image generation will be implemented soon!", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard(userMode),
+		})
+		return err
+	}
+
+	// Text mode - handle normal conversation
 	history, err := getConversationHistory(context.Background(), userID)
 	if err != nil {
 		logMessage(userID, username, "error", "Failed to get conversation history")
@@ -91,7 +133,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	if err != nil {
 		logMessage(userID, username, "error", err.Error())
 		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
-			ReplyMarkup: getRestartKeyboard(),
+			ReplyMarkup: getKeyboard(userMode),
 		})
 		return err
 	}
@@ -108,7 +150,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	logMessage(userID, username, "ai_response", aiResponse)
 
 	_, err = msg.Reply(b, aiResponse, &gotgbot.SendMessageOpts{
-		ReplyMarkup: getRestartKeyboard(),
+		ReplyMarkup: getKeyboard(userMode),
 	})
 	return err
 }
@@ -126,8 +168,13 @@ func handleStart(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	logMessage(userID, username, "command", "/start")
-	_, err := msg.Reply(b, "Hi! I am your AI assistant. Send me a message and I will respond using AI.", &gotgbot.SendMessageOpts{
-		ReplyMarkup: getRestartKeyboard(),
+	userMode, err := getUserMode(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get user mode")
+		userMode = "text" // fallback to text mode
+	}
+	_, err = msg.Reply(b, "Hi! I am your AI assistant. Send me a message and I will respond using AI.", &gotgbot.SendMessageOpts{
+		ReplyMarkup: getKeyboard(userMode),
 	})
 	return err
 }
@@ -145,12 +192,18 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	logMessage(userID, username, "command", "/help")
-	_, err := msg.Reply(b, "Available commands:\n"+
+	userMode, err := getUserMode(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get user mode")
+		userMode = "text" // fallback to text mode
+	}
+	_, err = msg.Reply(b, "Available commands:\n"+
 		"/start - Start the bot\n"+
 		"/help - Show this help message\n"+
 		"/set_models - Select AI model\n\n"+
-		"Use \"🔄 Restart Conversation\" to start a new conversation.", &gotgbot.SendMessageOpts{
-		ReplyMarkup: getRestartKeyboard(),
+		"Use \"🔄 Restart Conversation\" to start a new conversation.\n"+
+		"Use mode buttons to switch between text and image generation.", &gotgbot.SendMessageOpts{
+		ReplyMarkup: getKeyboard(userMode),
 	})
 	return err
 }

@@ -65,3 +65,21 @@ func setUserModel(ctx context.Context, userID int64, model string) error {
 	key := fmt.Sprintf("user:%d:model", userID)
 	return rdb.Set(ctx, key, model, 0).Err()
 }
+
+func getUserMode(ctx context.Context, userID int64) (string, error) {
+	key := fmt.Sprintf("user:%d:mode", userID)
+	mode, err := rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		// If no mode is set, return default mode as text
+		return "text", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis get error: %w", err)
+	}
+	return mode, nil
+}
+
+func setUserMode(ctx context.Context, userID int64, mode string) error {
+	key := fmt.Sprintf("user:%d:mode", userID)
+	return rdb.Set(ctx, key, mode, 0).Err()
+}

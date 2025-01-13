@@ -99,8 +99,37 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	logMessage(userID, username, "user_message", msg.Text)
 
 	if userMode == "image" {
-		// In image mode, treat the message as an image generation prompt
-		imageData, err := generateImage(context.Background(), userID, username, msg.Text)
+		prompt := msg.Text
+		// If user's language is not English, translate the prompt
+		if msg.From.LanguageCode != "" && msg.From.LanguageCode != "en" {
+			// Create a translation prompt
+			translationPrompt := fmt.Sprintf("Translate the following text from %s to English, respond with only the translation without any additional text: %s", msg.From.LanguageCode, msg.Text)
+			
+			// Call OpenRouter for translation
+			history := []Message{
+				{Role: "user", Content: translationPrompt},
+			}
+			translatedPrompt, err := callOpenRouter(context.Background(), userID, username, history, config.OpenRouterModel)
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("Translation failed: %v", err))
+				_, err = msg.Reply(b, "Sorry, I encountered an error translating your prompt.", &gotgbot.SendMessageOpts{
+					ReplyMarkup: getKeyboard(userMode),
+				})
+				return err
+			}
+			prompt = translatedPrompt
+			
+			// Inform user about translation
+			_, err = msg.Reply(b, fmt.Sprintf("Translated prompt: %s", prompt), &gotgbot.SendMessageOpts{
+				ReplyMarkup: getKeyboard(userMode),
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		// Generate image with translated prompt
+		imageData, err := generateImage(context.Background(), userID, username, prompt)
 		if err != nil {
 			logMessage(userID, username, "error", fmt.Sprintf("Image generation failed: %v", err))
 			_, err = msg.Reply(b, "Sorry, I encountered an error generating the image.", &gotgbot.SendMessageOpts{
@@ -127,8 +156,12 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 			return err
 		}
 
-		// Save the image file ID
-		if err := saveUserImage(context.Background(), userID, resp.Photo[0].FileId, msg.Text); err != nil {
+		// Save the image file ID with both original and translated prompts if they differ
+		promptInfo := msg.Text
+		if prompt != msg.Text {
+			promptInfo = fmt.Sprintf("%s\nTranslated to: %s", msg.Text, prompt)
+		}
+		if err := saveUserImage(context.Background(), userID, resp.Photo[0].FileId, promptInfo); err != nil {
 			logMessage(userID, username, "error", fmt.Sprintf("Failed to save image: %v", err))
 		}
 		return nil

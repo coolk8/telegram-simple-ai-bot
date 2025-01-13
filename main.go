@@ -38,6 +38,7 @@ func main() {
 		{Command: "start", Description: "Start the bot"},
 		{Command: "help", Description: "Show help message"},
 		{Command: "set_models", Description: "Select AI model"},
+		{Command: "my_images", Description: "Show your generated images"},
 	}
 	if _, err := b.SetMyCommands(commands, nil); err != nil {
 		log.Fatal("[Error] Failed to set bot commands: ", err)
@@ -62,6 +63,7 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("start", handleStart))
 	dispatcher.AddHandler(handlers.NewCommand("help", handleHelp))
 	dispatcher.AddHandler(handlers.NewCommand("set_models", handleSetModels))
+	dispatcher.AddHandler(handlers.NewCommand("my_images", handleMyImages))
 	dispatcher.AddHandler(handlers.NewCallback(nil, handleCallback))
 	dispatcher.AddHandler(handlers.NewMessage(nil, handleMessage))
 

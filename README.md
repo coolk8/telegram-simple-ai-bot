@@ -2,7 +2,7 @@
 
 # Telegram OpenRouter AI Bot
 
-A simple Telegram bot written in Go that uses OpenRouter API to generate AI responses to user messages.
+A Telegram bot written in Go that uses OpenRouter API for text chat and Together AI for image generation.
 
 ## Prerequisites
 
@@ -30,6 +30,11 @@ go mod download
 # API Keys
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
+TOGETHER_API_KEY=your_together_api_key_here
+
+# AI Models
+OPENROUTER_MODEL=google/gemini-flash-1.5
+TOGETHER_MODEL=black-forest-labs/FLUX.1-schnell
 
 # Redis configuration
 REDIS_HOST=localhost
@@ -41,6 +46,7 @@ REDIS_PASS=your_redis_password_here  # Password for Redis authentication
 To get the required API keys:
 - Telegram Bot Token: Talk to [@BotFather](https://t.me/botfather) on Telegram
 - OpenRouter API Key: Sign up at [OpenRouter](https://openrouter.ai/)
+- Together AI Key: Sign up at [Together](https://together.ai/)
 
 4. Configure Redis password:
    - Windows: Edit redis.windows.conf and set `requirepass your_redis_password_here`
@@ -65,29 +71,54 @@ bot.exe  # On Windows
 
 1. Start a chat with your bot on Telegram
 2. Send `/start` to begin
-3. Send any message to get an AI response
-4. Use the "🔄 Restart Conversation" button to start a new conversation
+3. Use mode buttons to switch between text and image generation:
+   - Text Mode: Send messages to chat with AI
+   - Image Mode: Send prompts to generate images
+4. Use `/my_images` to view your generated images
+5. Use `/set_models` to choose AI model for text chat
+6. Use "🔄 Restart Conversation" button to start a new conversation
 
 ## Features
 
+- Dual mode operation:
+  - Text chat with AI using OpenRouter
+  - Image generation using Together AI
 - Maintains conversation history for contextual responses
-- Responds to all text messages using AI
-- Uses Mistral-7B model through OpenRouter
+- Gallery of generated images with /my_images command
+- Model selection for text chat
 - Simple error handling
 - "Restart Conversation" button to clear chat history
 - Secure Redis connection with password authentication
 
 ## How It Works
 
-The bot maintains a conversation history for each user using Redis. This allows the AI to understand the context of your messages and provide more relevant responses. When you press the "Restart Conversation" button, your conversation history is cleared, and you can start a fresh conversation.
+The bot operates in two modes:
+
+### Text Mode
+- Maintains a conversation history for each user using Redis
+- Uses OpenRouter API to generate contextual responses
+- Supports multiple AI models that can be selected with /set_models
+- History can be cleared using the "Restart Conversation" button
+
+### Image Mode
+- Uses Together AI's image generation API
+- Accepts text prompts to generate images
+- Automatically saves generated images to user's gallery
+- Images can be viewed later using /my_images command
+- Each image is saved with its generation prompt and timestamp
 
 The Redis connection is secured with password authentication to ensure data safety. Make sure to use a strong password and keep it secure in your .env file.
 
 ## Project Structure
 
 - `main.go`: Main bot implementation
+- `handlers.go`: Command and message handlers
+- `openrouter.go`: OpenRouter API integration
+- `together.go`: Together AI integration for image generation
+- `redis.go`: Redis operations and data storage
+- `config.go`: Configuration management
 - `go.mod`: Go module definition and dependencies
-- `.env`: Configuration file for API keys and Redis settings
+- `.env`: Configuration file for API keys and settings
 
 ## Error Handling
 
@@ -95,6 +126,7 @@ The bot includes comprehensive error handling for:
 - Redis connection issues
 - API communication errors
 - Message processing failures
+- Image generation errors
 - Invalid configurations
 
 All errors are logged with timestamps and relevant context information.

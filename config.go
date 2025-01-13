@@ -20,6 +20,8 @@ type Config struct {
 	RedisPass        string
 	AvailableModels  []string
 	AllowedUsers     []int64
+	TogetherAPIKey   string
+	TogetherModel    string
 }
 
 var config Config
@@ -58,10 +60,12 @@ func initConfig() {
 		RedisPass:        os.Getenv("REDIS_PASS"),
 		AvailableModels:  availableModels,
 		AllowedUsers:     allowedUsers,
+		TogetherAPIKey:   os.Getenv("TOGETHER_API_KEY"),
+		TogetherModel:    os.Getenv("TOGETHER_MODEL"),
 	}
 
 	// Validate required environment variables
-	if config.TelegramToken == "" || config.OpenRouterAPIKey == "" || config.RedisPass == "" {
+	if config.TelegramToken == "" || config.OpenRouterAPIKey == "" || config.RedisPass == "" || config.TogetherAPIKey == "" {
 		log.Fatal("[Error] Missing required environment variables")
 	}
 }

@@ -100,10 +100,36 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	if userMode == "image" {
 		// In image mode, treat the message as an image generation prompt
-		_, err = msg.Reply(b, "Image generation will be implemented soon!", &gotgbot.SendMessageOpts{
+		imageData, err := generateImage(context.Background(), userID, username, msg.Text)
+		if err != nil {
+			logMessage(userID, username, "error", fmt.Sprintf("Image generation failed: %v", err))
+			_, err = msg.Reply(b, "Sorry, I encountered an error generating the image.", &gotgbot.SendMessageOpts{
+				ReplyMarkup: getKeyboard(userMode),
+			})
+			return err
+		}
+
+		// Send the generated image
+		_, err = msg.Reply(b, "Here's your generated image:", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getKeyboard(userMode),
 		})
-		return err
+		if err != nil {
+			return err
+		}
+
+		// Send the image and get its file ID
+		resp, err := b.SendPhoto(msg.Chat.Id, imageData, &gotgbot.SendPhotoOpts{
+			ReplyToMessageId: msg.MessageId,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Save the image file ID
+		if err := saveUserImage(context.Background(), userID, resp.Photo[0].FileId, msg.Text); err != nil {
+			logMessage(userID, username, "error", fmt.Sprintf("Failed to save image: %v", err))
+		}
+		return nil
 	}
 
 	// Text mode - handle normal conversation
@@ -200,7 +226,8 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	_, err = msg.Reply(b, "Available commands:\n"+
 		"/start - Start the bot\n"+
 		"/help - Show this help message\n"+
-		"/set_models - Select AI model\n\n"+
+		"/set_models - Select AI model\n"+
+		"/my_images - Show your generated images\n\n"+
 		"Use \"🔄 Restart Conversation\" to start a new conversation.\n"+
 		"Use mode buttons to switch between text and image generation.", &gotgbot.SendMessageOpts{
 		ReplyMarkup: getKeyboard(userMode),
@@ -300,6 +327,66 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 			ShowAlert: true,
 		})
 		return err
+	}
+
+	return nil
+}
+
+func handleMyImages(b *gotgbot.Bot, ctx *ext.Context) error {
+	msg := ctx.EffectiveMessage
+	userID := msg.From.Id
+	username := msg.From.Username
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := msg.Reply(b, "Sorry, you are not authorized to use this bot.", nil)
+		return err
+	}
+
+	logMessage(userID, username, "command", "/my_images")
+
+	// Get user's current mode for keyboard
+	userMode, err := getUserMode(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get user mode")
+		userMode = "text" // fallback to text mode
+	}
+
+	// Get user's images
+	images, err := getUserImages(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", fmt.Sprintf("Failed to get images: %v", err))
+		_, err = msg.Reply(b, "Sorry, I encountered an error retrieving your images.", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard(userMode),
+		})
+		return err
+	}
+
+	if len(images) == 0 {
+		_, err = msg.Reply(b, "You haven't generated any images yet. Switch to image mode and send a prompt to generate one!", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard(userMode),
+		})
+		return err
+	}
+
+	// Send initial message
+	_, err = msg.Reply(b, fmt.Sprintf("You have generated %d images. Here they are:", len(images)), &gotgbot.SendMessageOpts{
+		ReplyMarkup: getKeyboard(userMode),
+	})
+	if err != nil {
+		return err
+	}
+
+	// Send each image with its prompt and date
+	for _, img := range images {
+		_, err = b.SendPhoto(msg.Chat.Id, img.FileID, &gotgbot.SendPhotoOpts{
+			Caption: fmt.Sprintf("Prompt: %s\nDate: %s", img.Prompt, img.Date),
+		})
+		if err != nil {
+			logMessage(userID, username, "error", fmt.Sprintf("Failed to send image: %v", err))
+			continue
+		}
 	}
 
 	return nil

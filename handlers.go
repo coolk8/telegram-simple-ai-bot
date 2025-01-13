@@ -119,7 +119,9 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 		// Send the image and get its file ID
 		resp, err := b.SendPhoto(msg.Chat.Id, imageData, &gotgbot.SendPhotoOpts{
-			ReplyToMessageId: msg.MessageId,
+			ReplyParameters: &gotgbot.ReplyParameters{
+				MessageId: msg.MessageId,
+			},
 		})
 		if err != nil {
 			return err

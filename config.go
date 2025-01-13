@@ -10,18 +10,19 @@ import (
 )
 
 type Config struct {
-	TelegramToken    string
-	OpenRouterAPIKey string
-	OpenRouterModel  string
-	SystemPrompt     string
-	RedisHost        string
-	RedisPort        string
-	RedisDB          string
-	RedisPass        string
-	AvailableModels  []string
-	AllowedUsers     []int64
-	TogetherAPIKey   string
-	TogetherModel    string
+	TelegramToken       string
+	OpenRouterAPIKey    string
+	OpenRouterModel     string
+	SystemPrompt        string
+	RedisHost           string
+	RedisPort           string
+	RedisDB             string
+	RedisPass           string
+	AvailableModels     []string
+	AllowedUsers        []int64
+	TogetherAPIKey      string
+	TogetherModel       string
+	AvailableImgModels  []string
 }
 
 var config Config
@@ -49,19 +50,26 @@ func initConfig() {
 		}
 	}
 
+	// Default image models
+	imgModels := []string{
+		"black-forest-labs/FLUX.1-schnell",
+		"black-forest-labs/FLUX.1-dev",
+	}
+
 	config = Config{
-		TelegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
-		OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
-		OpenRouterModel:  os.Getenv("OPENROUTER_MODEL"),
-		SystemPrompt:     os.Getenv("SYSTEM_PROMPT"),
-		RedisHost:        os.Getenv("REDIS_HOST"),
-		RedisPort:        os.Getenv("REDIS_PORT"),
-		RedisDB:          os.Getenv("REDIS_DB"),
-		RedisPass:        os.Getenv("REDIS_PASS"),
-		AvailableModels:  availableModels,
-		AllowedUsers:     allowedUsers,
-		TogetherAPIKey:   os.Getenv("TOGETHER_API_KEY"),
-		TogetherModel:    os.Getenv("TOGETHER_MODEL"),
+		TelegramToken:       os.Getenv("TELEGRAM_BOT_TOKEN"),
+		OpenRouterAPIKey:    os.Getenv("OPENROUTER_API_KEY"),
+		OpenRouterModel:     os.Getenv("OPENROUTER_MODEL"),
+		SystemPrompt:        os.Getenv("SYSTEM_PROMPT"),
+		RedisHost:           os.Getenv("REDIS_HOST"),
+		RedisPort:           os.Getenv("REDIS_PORT"),
+		RedisDB:            os.Getenv("REDIS_DB"),
+		RedisPass:          os.Getenv("REDIS_PASS"),
+		AvailableModels:    availableModels,
+		AllowedUsers:       allowedUsers,
+		TogetherAPIKey:     os.Getenv("TOGETHER_API_KEY"),
+		TogetherModel:      os.Getenv("TOGETHER_MODEL"),
+		AvailableImgModels: imgModels,
 	}
 
 	// Validate required environment variables

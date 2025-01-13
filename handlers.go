@@ -128,8 +128,15 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 			}
 		}
 
+		// Get user's preferred image model
+		userImageModel, err := getUserImageModel(context.Background(), userID)
+		if err != nil {
+			logMessage(userID, username, "error", "Failed to get user image model")
+			userImageModel = config.TogetherModel // fallback to default
+		}
+
 		// Generate image with translated prompt
-		imageData, err := generateImage(context.Background(), userID, username, prompt)
+		imageData, err := generateImage(context.Background(), userID, username, prompt, userImageModel)
 		if err != nil {
 			logMessage(userID, username, "error", fmt.Sprintf("Image generation failed: %v", err))
 			_, err = msg.Reply(b, "Sorry, I encountered an error generating the image.", &gotgbot.SendMessageOpts{
@@ -261,7 +268,8 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	_, err = msg.Reply(b, "Available commands:\n"+
 		"/start - Start the bot\n"+
 		"/help - Show this help message\n"+
-		"/set_models - Select AI model\n"+
+		"/set_models - Select AI model for text chat\n"+
+		"/set_image_models - Select AI model for image generation\n"+
 		"/my_images - Show your generated images\n\n"+
 		"Use \"🔄 Restart Conversation\" to start a new conversation.\n"+
 		"Use mode buttons to switch between text and image generation.", &gotgbot.SendMessageOpts{
@@ -304,7 +312,47 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 		})
 	}
 
-	_, err = msg.Reply(b, "Choose a model:", &gotgbot.SendMessageOpts{
+	_, err = msg.Reply(b, "Choose a model for text chat:", &gotgbot.SendMessageOpts{
+		ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
+	})
+	return err
+}
+
+func handleSetImageModels(b *gotgbot.Bot, ctx *ext.Context) error {
+	msg := ctx.EffectiveMessage
+	userID := msg.From.Id
+	username := msg.From.Username
+
+	// Check if user is allowed
+	if !isUserAllowed(userID) {
+		logMessage(userID, username, "access_denied", "User not in allowed list")
+		_, err := msg.Reply(b, "Sorry, you are not authorized to use this bot.", nil)
+		return err
+	}
+
+	logMessage(userID, username, "command", "/set_image_models")
+
+	// Get user's current image model
+	currentModel, err := getUserImageModel(context.Background(), userID)
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get current image model")
+		currentModel = ""
+	}
+
+	// Create inline keyboard with model options
+	var buttons [][]gotgbot.InlineKeyboardButton
+	for _, model := range config.AvailableImgModels {
+		// Add checkmark for current model
+		modelText := model
+		if model == currentModel {
+			modelText = "✅ " + model
+		}
+		buttons = append(buttons, []gotgbot.InlineKeyboardButton{
+			{Text: modelText, CallbackData: "img_model:" + model},
+		})
+	}
+
+	_, err = msg.Reply(b, "Choose an image generation model:", &gotgbot.SendMessageOpts{
 		ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
 	})
 	return err
@@ -326,7 +374,43 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	data := callback.Data
-	if len(data) > 6 && data[:6] == "model:" {
+	if len(data) > 10 && data[:10] == "img_model:" {
+		selectedModel := data[10:]
+
+		// Save user's image model preference
+		if err := setUserImageModel(context.Background(), userID, selectedModel); err != nil {
+			logMessage(userID, username, "error", "Failed to save image model preference")
+			_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+				Text:      "Error saving image model preference",
+				ShowAlert: true,
+			})
+			return err
+		}
+
+		// Get the original message
+		msg := callback.Message
+		if msg == nil {
+			return fmt.Errorf("callback message is nil")
+		}
+
+		// Update the message to show selected model
+		_, _, err := b.EditMessageText("Selected image model: "+selectedModel, &gotgbot.EditMessageTextOpts{
+			ChatId:      msg.GetChat().Id,
+			MessageId:   msg.GetMessageId(),
+			ParseMode:   "HTML",
+			ReplyMarkup: gotgbot.InlineKeyboardMarkup{},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Show confirmation to user
+		_, err = callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+			Text:      "Image model set to: " + selectedModel,
+			ShowAlert: true,
+		})
+		return err
+	} else if len(data) > 6 && data[:6] == "model:" {
 		selectedModel := data[6:]
 
 		// Save user's model preference

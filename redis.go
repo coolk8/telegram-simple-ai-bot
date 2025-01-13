@@ -85,6 +85,24 @@ func setUserMode(ctx context.Context, userID int64, mode string) error {
 	return rdb.Set(ctx, key, mode, 0).Err()
 }
 
+func getUserImageModel(ctx context.Context, userID int64) (string, error) {
+	key := fmt.Sprintf("user:%d:image_model", userID)
+	model, err := rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		// If no model is set, return default model from config
+		return config.TogetherModel, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis get error: %w", err)
+	}
+	return model, nil
+}
+
+func setUserImageModel(ctx context.Context, userID int64, model string) error {
+	key := fmt.Sprintf("user:%d:image_model", userID)
+	return rdb.Set(ctx, key, model, 0).Err()
+}
+
 func saveUserImage(ctx context.Context, userID int64, fileID string, prompt string) error {
 	key := fmt.Sprintf("user:%d:images", userID)
 	imageData := map[string]string{

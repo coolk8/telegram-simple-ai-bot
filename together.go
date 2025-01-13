@@ -26,13 +26,13 @@ type ImageGenerationResponse struct {
 	} `json:"data"`
 }
 
-func generateImage(ctx context.Context, userID int64, username string, prompt string) ([]byte, error) {
+func generateImage(ctx context.Context, userID int64, username string, prompt string, model string) ([]byte, error) {
 	// Log the request
 	logMessage(userID, username, "image_request", prompt)
 
 	// Prepare the request body
 	reqBody := ImageGenerationRequest{
-		Model:          config.TogetherModel,
+		Model:          model,
 		Prompt:         prompt,
 		Width:          1024,
 		Height:         768,

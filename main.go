@@ -34,12 +34,19 @@ func main() {
 	}
 
 	// Set bot commands
-	commands := []gotgbot.BotCommand{
-		{Command: "start", Description: "Start the bot"},
-		{Command: "help", Description: "Show help message"},
-		{Command: "set_models", Description: "Select AI model for text chat"},
-		{Command: "set_image_models", Description: "Select AI model for image generation"},
-		{Command: "my_images", Description: "Show your generated images"},
+	var commands []gotgbot.BotCommand
+	commands = append(commands,
+		gotgbot.BotCommand{Command: "start", Description: "Start the bot"},
+		gotgbot.BotCommand{Command: "help", Description: "Show help message"},
+		gotgbot.BotCommand{Command: "set_models", Description: "Select AI model for text chat"},
+	)
+	
+	// Add image-related commands if enabled
+	if isImageGenerationEnabled() {
+		commands = append(commands,
+			gotgbot.BotCommand{Command: "set_image_models", Description: "Select AI model for image generation"},
+			gotgbot.BotCommand{Command: "my_images", Description: "Show your generated images"},
+		)
 	}
 	if _, err := b.SetMyCommands(commands, nil); err != nil {
 		log.Fatal("[Error] Failed to set bot commands: ", err)
@@ -64,8 +71,12 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("start", handleStart))
 	dispatcher.AddHandler(handlers.NewCommand("help", handleHelp))
 	dispatcher.AddHandler(handlers.NewCommand("set_models", handleSetModels))
-	dispatcher.AddHandler(handlers.NewCommand("set_image_models", handleSetImageModels))
-	dispatcher.AddHandler(handlers.NewCommand("my_images", handleMyImages))
+	
+	// Add image-related handlers if enabled
+	if isImageGenerationEnabled() {
+		dispatcher.AddHandler(handlers.NewCommand("set_image_models", handleSetImageModels))
+		dispatcher.AddHandler(handlers.NewCommand("my_images", handleMyImages))
+	}
 	dispatcher.AddHandler(handlers.NewCallback(nil, handleCallback))
 	dispatcher.AddHandler(handlers.NewMessage(nil, handleMessage))
 

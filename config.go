@@ -73,14 +73,16 @@ func initConfig() {
 	}
 
 	// Validate required environment variables
-	if config.TelegramToken == "" || config.OpenRouterAPIKey == "" || config.RedisPass == "" || config.TogetherAPIKey == "" {
+	if config.TelegramToken == "" || config.OpenRouterAPIKey == "" || config.RedisPass == "" {
 		log.Fatal("[Error] Missing required environment variables")
 	}
 
-	// Validate image models configuration
-	for _, model := range config.AvailableImgModels {
-		if _, ok := imageModels[model]; !ok {
-			log.Fatalf("[Error] Missing configuration for image model: %s", model)
+	// Validate image models configuration if image generation is enabled
+	if config.TogetherAPIKey != "" {
+		for _, model := range config.AvailableImgModels {
+			if _, ok := imageModels[model]; !ok {
+				log.Fatalf("[Error] Missing configuration for image model: %s", model)
+			}
 		}
 	}
 }

@@ -9,6 +9,10 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 )
 
+func isImageGenerationEnabled() bool {
+	return config.TogetherAPIKey != ""
+}
+
 func isUserAllowed(userID int64) bool {
 	// If no allowed users are configured, allow everyone
 	if len(config.AllowedUsers) == 0 {
@@ -25,18 +29,19 @@ func isUserAllowed(userID int64) bool {
 }
 
 func getKeyboard(mode string) *gotgbot.ReplyKeyboardMarkup {
-	modeButton := "🖼 Image Mode"
-	if mode == "image" {
-		modeButton = "📝 Text Mode"
+	var buttons []gotgbot.KeyboardButton
+	buttons = append(buttons, gotgbot.KeyboardButton{Text: "🔄 Restart Conversation"})
+	
+	if isImageGenerationEnabled() {
+		modeButton := "🖼 Image Mode"
+		if mode == "image" {
+			modeButton = "📝 Text Mode"
+		}
+		buttons = append(buttons, gotgbot.KeyboardButton{Text: modeButton})
 	}
 	
 	return &gotgbot.ReplyKeyboardMarkup{
-		Keyboard: [][]gotgbot.KeyboardButton{
-			{
-				{Text: "🔄 Restart Conversation"},
-				{Text: modeButton},
-			},
-		},
+		Keyboard: [][]gotgbot.KeyboardButton{buttons},
 		ResizeKeyboard: true,
 	}
 }
@@ -64,7 +69,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	// Handle mode switching
-	if msg.Text == "🖼 Image Mode" {
+	if msg.Text == "🖼 Image Mode" && isImageGenerationEnabled() {
 		if err := setUserMode(context.Background(), userID, "image"); err != nil {
 			logMessage(userID, username, "error", "Failed to set user mode")
 		}
@@ -99,7 +104,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// Log user message
 	logMessage(userID, username, "user_message", msg.Text)
 
-	if userMode == "image" {
+	if userMode == "image" && isImageGenerationEnabled() {
 		prompt := msg.Text
 		// If user's language is not English, translate the prompt
 		if msg.From.LanguageCode != "" && msg.From.LanguageCode != "en" {
@@ -270,14 +275,22 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 		logMessage(userID, username, "error", "Failed to get user mode")
 		userMode = "text" // fallback to text mode
 	}
-	_, err = msg.Reply(b, "Available commands:\n"+
-		"/start - Start the bot\n"+
-		"/help - Show this help message\n"+
-		"/set_models - Select AI model for text chat\n"+
-		"/set_image_models - Select AI model for image generation\n"+
-		"/my_images - Show your generated images\n\n"+
-		"Use \"🔄 Restart Conversation\" to start a new conversation.\n"+
-		"Use mode buttons to switch between text and image generation.", &gotgbot.SendMessageOpts{
+	helpText := "Available commands:\n" +
+		"/start - Start the bot\n" +
+		"/help - Show this help message\n" +
+		"/set_models - Select AI model for text chat\n"
+
+	if isImageGenerationEnabled() {
+		helpText += "/set_image_models - Select AI model for image generation\n" +
+			"/my_images - Show your generated images\n"
+	}
+
+	helpText += "\nUse \"🔄 Restart Conversation\" to start a new conversation."
+	if isImageGenerationEnabled() {
+		helpText += "\nUse mode buttons to switch between text and image generation."
+	}
+
+	_, err = msg.Reply(b, helpText, &gotgbot.SendMessageOpts{
 		ReplyMarkup: getKeyboard(userMode),
 	})
 	return err
@@ -324,6 +337,10 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 }
 
 func handleSetImageModels(b *gotgbot.Bot, ctx *ext.Context) error {
+	// Skip if image generation is not enabled
+	if !isImageGenerationEnabled() {
+		return nil
+	}
 	msg := ctx.EffectiveMessage
 	userID := msg.From.Id
 	username := msg.From.Username
@@ -457,6 +474,10 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 }
 
 func handleMyImages(b *gotgbot.Bot, ctx *ext.Context) error {
+	// Skip if image generation is not enabled
+	if !isImageGenerationEnabled() {
+		return nil
+	}
 	msg := ctx.EffectiveMessage
 	userID := msg.From.Id
 	username := msg.From.Username

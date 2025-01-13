@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
@@ -138,8 +139,12 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		// Generate image with translated prompt
 		imageData, err := generateImage(context.Background(), userID, username, prompt, userImageModel)
 		if err != nil {
+			errMsg := "Sorry, I encountered an error generating the image."
+			if strings.Contains(err.Error(), "undefined image model configuration") {
+				errMsg = "Sorry, this image model is not properly configured. Please try a different model or contact the administrator."
+			}
 			logMessage(userID, username, "error", fmt.Sprintf("Image generation failed: %v", err))
-			_, err = msg.Reply(b, "Sorry, I encountered an error generating the image.", &gotgbot.SendMessageOpts{
+			_, err = msg.Reply(b, errMsg, &gotgbot.SendMessageOpts{
 				ReplyMarkup: getKeyboard(userMode),
 			})
 			return err

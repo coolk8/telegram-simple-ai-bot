@@ -10,6 +10,25 @@ import (
 	"net/http"
 )
 
+// ImageModelConfig stores configuration for each image generation model
+type ImageModelConfig struct {
+	Name  string
+	Steps int
+}
+
+// Map of model configurations
+var imageModels = map[string]ImageModelConfig{
+	"black-forest-labs/FLUX.1-schnell": {
+		Name:  "black-forest-labs/FLUX.1-schnell",
+		Steps: 4,
+	},
+	"black-forest-labs/FLUX.1-dev": {
+		Name:  "black-forest-labs/FLUX.1-dev",
+		Steps: 28,
+	},
+}
+
+
 type ImageGenerationRequest struct {
 	Model          string `json:"model"`
 	Prompt         string `json:"prompt"`
@@ -30,13 +49,19 @@ func generateImage(ctx context.Context, userID int64, username string, prompt st
 	// Log the request
 	logMessage(userID, username, "image_request", prompt)
 
+	// Get model configuration
+	modelConfig, ok := imageModels[model]
+	if !ok {
+		return nil, fmt.Errorf("undefined image model configuration for: %s", model)
+	}
+
 	// Prepare the request body
 	reqBody := ImageGenerationRequest{
-		Model:          model,
+		Model:          modelConfig.Name,
 		Prompt:         prompt,
 		Width:          1024,
 		Height:         768,
-		Steps:          4,
+		Steps:          modelConfig.Steps,
 		N:              1,
 		ResponseFormat: "b64_json",
 	}

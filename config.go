@@ -50,10 +50,10 @@ func initConfig() {
 		}
 	}
 
-	// Default image models
-	imgModels := []string{
-		"black-forest-labs/FLUX.1-schnell",
-		"black-forest-labs/FLUX.1-dev",
+	// Parse available image models from environment variable
+	imgModels := []string{"black-forest-labs/FLUX.1-schnell"} // default model
+	if models := os.Getenv("AVAILABLE_IMG_MODELS"); models != "" {
+		imgModels = strings.Split(models, ",")
 	}
 
 	config = Config{
@@ -75,5 +75,12 @@ func initConfig() {
 	// Validate required environment variables
 	if config.TelegramToken == "" || config.OpenRouterAPIKey == "" || config.RedisPass == "" || config.TogetherAPIKey == "" {
 		log.Fatal("[Error] Missing required environment variables")
+	}
+
+	// Validate image models configuration
+	for _, model := range config.AvailableImgModels {
+		if _, ok := imageModels[model]; !ok {
+			log.Fatalf("[Error] Missing configuration for image model: %s", model)
+		}
 	}
 }

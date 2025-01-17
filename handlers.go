@@ -91,11 +91,22 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Handle restart conversation button
 	if msg.Text == "🔄 Restart Conversation" {
-		if err := clearConversationHistory(context.Background(), userID); err != nil {
-			logMessage(userID, username, "error", "Failed to clear conversation")
+		// Get user's selected models
+		selectedModels, err := getUserModels(context.Background(), userID)
+		if err != nil {
+			logMessage(userID, username, "error", "Failed to get user models")
+			selectedModels = []string{config.OpenRouterModel} // fallback to default
 		}
+
+		// Clear conversation history for all models
+		for _, model := range selectedModels {
+			if err := clearConversationHistory(context.Background(), userID, model); err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("Failed to clear conversation for model %s", model))
+			}
+		}
+
 		logMessage(userID, username, "system", "Conversation reset")
-		_, err := msg.Reply(b, "Conversation has been reset. Send a new message to start.", &gotgbot.SendMessageOpts{
+		_, err = msg.Reply(b, "Conversation has been reset. Send a new message to start.", &gotgbot.SendMessageOpts{
 			ReplyMarkup: getKeyboard(userMode),
 		})
 		return err
@@ -185,52 +196,119 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	// Text mode - handle normal conversation
-	history, err := getConversationHistory(context.Background(), userID)
+	// Get user's selected models
+	selectedModels, err := getUserModels(context.Background(), userID)
 	if err != nil {
-		logMessage(userID, username, "error", "Failed to get conversation history")
-		history = []Message{}
+		logMessage(userID, username, "error", "Failed to get user models")
+		selectedModels = []string{config.OpenRouterModel} // fallback to default
 	}
 
-	// If history is empty, add system prompt if configured
-	if len(history) == 0 && config.SystemPrompt != "" {
-		history = append(history, Message{Role: "system", Content: config.SystemPrompt})
+	// If this is a reply to a model's response, use that model
+	replyToMsg := msg.ReplyToMessage
+	var targetModel string
+	if replyToMsg != nil && replyToMsg.From.Id == b.Id {
+		// Extract model name from the response (it's in italics at the start)
+		text := replyToMsg.Text
+		if strings.HasPrefix(text, "_") {
+			if idx := strings.Index(text[1:], "_"); idx != -1 {
+				targetModel = text[1 : idx+1]
+			}
+		}
 	}
 
-	// Add user message to history
-	history = append(history, Message{Role: "user", Content: msg.Text})
+	// If we have a target model (user replied to a specific model's message)
+	if targetModel != "" {
+		// Get conversation history for this model
+		history, err := getConversationHistory(context.Background(), userID, targetModel)
+		if err != nil {
+			logMessage(userID, username, "error", "Failed to get conversation history")
+			history = []Message{}
+		}
 
-	// Get user's preferred model
-	userModel, err := getUserModel(context.Background(), userID)
-	if err != nil {
-		logMessage(userID, username, "error", "Failed to get user model")
-		userModel = config.OpenRouterModel // fallback to default
-	}
+		// If history is empty, add system prompt if configured
+		if len(history) == 0 && config.SystemPrompt != "" {
+			history = append(history, Message{Role: "system", Content: config.SystemPrompt})
+		}
 
-	// Call OpenRouter API with user's model
-	aiResponse, err := callOpenRouter(context.Background(), userID, username, history, userModel)
-	if err != nil {
-		logMessage(userID, username, "error", err.Error())
-		_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
+		// Add user message to history
+		history = append(history, Message{Role: "user", Content: msg.Text})
+
+		// Call OpenRouter API with the target model
+		aiResponse, err := callOpenRouter(context.Background(), userID, username, history, targetModel)
+		if err != nil {
+			logMessage(userID, username, "error", err.Error())
+			_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
+				ReplyMarkup: getKeyboard(userMode),
+			})
+			return err
+		}
+
+		// Add AI response to history
+		history = append(history, Message{Role: "assistant", Content: aiResponse})
+
+		// Save updated conversation history
+		if err := saveConversationHistory(context.Background(), userID, targetModel, history); err != nil {
+			logMessage(userID, username, "error", "Failed to save conversation history")
+		}
+
+		// Log AI response
+		logMessage(userID, username, "ai_response", fmt.Sprintf("[%s] %s", targetModel, aiResponse))
+
+		// Format response with model name in italics
+		formattedResponse := fmt.Sprintf("_%s_\n\n%s", targetModel, aiResponse)
+		_, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
 			ReplyMarkup: getKeyboard(userMode),
+			ParseMode:   "Markdown",
 		})
 		return err
 	}
 
-	// Add AI response to history
-	history = append(history, Message{Role: "assistant", Content: aiResponse})
+	// If no target model (new conversation or not replying to a model), use all selected models
+	for _, model := range selectedModels {
+		// Get conversation history for this model
+		history, err := getConversationHistory(context.Background(), userID, model)
+		if err != nil {
+			logMessage(userID, username, "error", "Failed to get conversation history")
+			history = []Message{}
+		}
 
-	// Save updated conversation history
-	if err := saveConversationHistory(context.Background(), userID, history); err != nil {
-		logMessage(userID, username, "error", "Failed to save conversation history")
+		// If history is empty, add system prompt if configured
+		if len(history) == 0 && config.SystemPrompt != "" {
+			history = append(history, Message{Role: "system", Content: config.SystemPrompt})
+		}
+
+		// Add user message to history
+		history = append(history, Message{Role: "user", Content: msg.Text})
+
+		// Call OpenRouter API with this model
+		aiResponse, err := callOpenRouter(context.Background(), userID, username, history, model)
+		if err != nil {
+			logMessage(userID, username, "error", fmt.Sprintf("[%s] %s", model, err.Error()))
+			continue // Try next model instead of failing completely
+		}
+
+		// Add AI response to history
+		history = append(history, Message{Role: "assistant", Content: aiResponse})
+
+		// Save updated conversation history
+		if err := saveConversationHistory(context.Background(), userID, model, history); err != nil {
+			logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to save conversation history", model))
+		}
+
+		// Log AI response
+		logMessage(userID, username, "ai_response", fmt.Sprintf("[%s] %s", model, aiResponse))
+
+		// Format response with model name in italics
+		formattedResponse := fmt.Sprintf("_%s_\n\n%s", model, aiResponse)
+		_, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard(userMode),
+			ParseMode:   "Markdown",
+		})
+		if err != nil {
+			logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response", model))
+		}
 	}
-
-	// Log AI response
-	logMessage(userID, username, "ai_response", aiResponse)
-
-	_, err = msg.Reply(b, aiResponse, &gotgbot.SendMessageOpts{
-		ReplyMarkup: getKeyboard(userMode),
-	})
-	return err
+	return nil
 }
 
 func handleStart(b *gotgbot.Bot, ctx *ext.Context) error {
@@ -278,7 +356,7 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	helpText := "Available commands:\n" +
 		"/start - Start the bot\n" +
 		"/help - Show this help message\n" +
-		"/set_models - Select AI model for text chat\n"
+		"/set_models - Select AI models for text chat (you can select multiple)\n"
 
 	if isImageGenerationEnabled() {
 		helpText += "/set_image_models - Select AI model for image generation\n" +
@@ -289,6 +367,10 @@ func handleHelp(b *gotgbot.Bot, ctx *ext.Context) error {
 	if isImageGenerationEnabled() {
 		helpText += "\nUse mode buttons to switch between text and image generation."
 	}
+
+	helpText += "\n\nIn text mode:\n" +
+		"- First message: All selected models will respond\n" +
+		"- To continue with a specific model: Reply to its message"
 
 	_, err = msg.Reply(b, helpText, &gotgbot.SendMessageOpts{
 		ReplyMarkup: getKeyboard(userMode),
@@ -310,11 +392,17 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 
 	logMessage(userID, username, "command", "/set_models")
 
-	// Get user's current model
-	currentModel, err := getUserModel(context.Background(), userID)
+	// Get user's current models
+	currentModels, err := getUserModels(context.Background(), userID)
 	if err != nil {
-		logMessage(userID, username, "error", "Failed to get current model")
-		currentModel = ""
+		logMessage(userID, username, "error", "Failed to get current models")
+		currentModels = []string{}
+	}
+
+	// Create map for O(1) lookup
+	selectedModels := make(map[string]bool)
+	for _, model := range currentModels {
+		selectedModels[model] = true
 	}
 
 	// Create inline keyboard with model options including pricing
@@ -326,7 +414,7 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 			modelText = fmt.Sprintf("%s (In: $%.2f, Out: $%.2f per 1M tokens)", 
 				modelInfo.ID, modelInfo.PriceIn, modelInfo.PriceOut)
 		}
-		if modelInfo.ID == currentModel {
+		if selectedModels[modelInfo.ID] {
 			modelText = "✅ " + modelText
 		}
 		buttons = append(buttons, []gotgbot.InlineKeyboardButton{
@@ -334,7 +422,12 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 		})
 	}
 
-	_, err = msg.Reply(b, "Choose a model for text chat:", &gotgbot.SendMessageOpts{
+	// Add a "Done" button at the bottom
+	buttons = append(buttons, []gotgbot.InlineKeyboardButton{
+		{Text: "✨ Done", CallbackData: "models:done"},
+	})
+
+	_, err = msg.Reply(b, "Choose models for text chat (select multiple):", &gotgbot.SendMessageOpts{
 		ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
 	})
 	return err
@@ -436,40 +529,97 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 	} else if len(data) > 6 && data[:6] == "model:" {
 		selectedModel := data[6:]
 
-		// Find selected model info
-		var selectedModelInfo ModelInfo
-		for _, info := range config.AvailableModels {
-			if info.ID == selectedModel {
-				selectedModelInfo = info
-				break
-			}
-		}
-
-		// Save user's model preference
-		if err := setUserModel(context.Background(), userID, selectedModel); err != nil {
-			logMessage(userID, username, "error", "Failed to save model preference")
+		// Get user's current models
+		currentModels, err := getUserModels(context.Background(), userID)
+		if err != nil {
+			logMessage(userID, username, "error", "Failed to get current models")
 			_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
-				Text:      "Error saving model preference",
+				Text:      "Error getting current models",
 				ShowAlert: true,
 			})
 			return err
 		}
 
-		// Get the original message
-		msg := callback.Message
-		if msg == nil {
-			return fmt.Errorf("callback message is nil")
+		// Create map for O(1) lookup
+		selectedModels := make(map[string]bool)
+		for _, model := range currentModels {
+			selectedModels[model] = true
 		}
 
-		// Update the message to show selected model with pricing
-		modelText := selectedModel
-		if selectedModelInfo.PriceIn > 0 || selectedModelInfo.PriceOut > 0 {
-			modelText = fmt.Sprintf("%s (In: $%.2f, Out: $%.2f per 1M tokens)", 
-				selectedModel, selectedModelInfo.PriceIn, selectedModelInfo.PriceOut)
+		// Toggle model selection
+		if selectedModels[selectedModel] {
+			if err := removeUserModel(context.Background(), userID, selectedModel); err != nil {
+				logMessage(userID, username, "error", "Failed to remove model")
+				_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+					Text:      "Error removing model",
+					ShowAlert: true,
+				})
+				return err
+			}
+			delete(selectedModels, selectedModel)
+		} else {
+			if err := addUserModel(context.Background(), userID, selectedModel); err != nil {
+				logMessage(userID, username, "error", "Failed to add model")
+				_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+					Text:      "Error adding model",
+					ShowAlert: true,
+				})
+				return err
+			}
+			selectedModels[selectedModel] = true
 		}
-		_, _, err := b.EditMessageText("Selected model: "+modelText, &gotgbot.EditMessageTextOpts{
-			ChatId:      msg.GetChat().Id,
-			MessageId:   msg.GetMessageId(),
+
+		// Update the message with new selection state
+		var buttons [][]gotgbot.InlineKeyboardButton
+		for _, modelInfo := range config.AvailableModels {
+			modelText := modelInfo.ID
+			if modelInfo.PriceIn > 0 || modelInfo.PriceOut > 0 {
+				modelText = fmt.Sprintf("%s (In: $%.2f, Out: $%.2f per 1M tokens)", 
+					modelInfo.ID, modelInfo.PriceIn, modelInfo.PriceOut)
+			}
+			if selectedModels[modelInfo.ID] {
+				modelText = "✅ " + modelText
+			}
+			buttons = append(buttons, []gotgbot.InlineKeyboardButton{
+				{Text: modelText, CallbackData: "model:" + modelInfo.ID},
+			})
+		}
+
+		// Add "Done" button
+		buttons = append(buttons, []gotgbot.InlineKeyboardButton{
+			{Text: "✨ Done", CallbackData: "models:done"},
+		})
+
+		// Update message with new keyboard
+		_, _, err = b.EditMessageText("Choose models for text chat (select multiple):", &gotgbot.EditMessageTextOpts{
+			ChatId:      callback.Message.Chat.Id,
+			MessageId:   callback.Message.MessageId,
+			ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Acknowledge the callback without showing alert
+		_, err = callback.Answer(b, nil)
+		return err
+	} else if data == "models:done" {
+		// Get user's selected models
+		selectedModels, err := getUserModels(context.Background(), userID)
+		if err != nil {
+			logMessage(userID, username, "error", "Failed to get selected models")
+			_, err := callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
+				Text:      "Error getting selected models",
+				ShowAlert: true,
+			})
+			return err
+		}
+
+		// Update message to show final selection
+		modelsList := strings.Join(selectedModels, "\n")
+		_, _, err = b.EditMessageText(fmt.Sprintf("Selected models:\n%s", modelsList), &gotgbot.EditMessageTextOpts{
+			ChatId:      callback.Message.Chat.Id,
+			MessageId:   callback.Message.MessageId,
 			ParseMode:   "HTML",
 			ReplyMarkup: gotgbot.InlineKeyboardMarkup{},
 		})

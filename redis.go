@@ -18,8 +18,8 @@ func initRedis() {
 	})
 }
 
-func getConversationHistory(ctx context.Context, userID int64) ([]Message, error) {
-	key := fmt.Sprintf("conversation:%d", userID)
+func getConversationHistory(ctx context.Context, userID int64, model string) ([]Message, error) {
+	key := fmt.Sprintf("conversation:%d:%s", userID, model)
 	data, err := rdb.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return []Message{}, nil
@@ -35,8 +35,8 @@ func getConversationHistory(ctx context.Context, userID int64) ([]Message, error
 	return messages, nil
 }
 
-func saveConversationHistory(ctx context.Context, userID int64, messages []Message) error {
-	key := fmt.Sprintf("conversation:%d", userID)
+func saveConversationHistory(ctx context.Context, userID int64, model string, messages []Message) error {
+	key := fmt.Sprintf("conversation:%d:%s", userID, model)
 	data, err := json.Marshal(messages)
 	if err != nil {
 		return fmt.Errorf("json marshal error: %w", err)
@@ -44,27 +44,40 @@ func saveConversationHistory(ctx context.Context, userID int64, messages []Messa
 	return rdb.Set(ctx, key, string(data), 0).Err()
 }
 
-func clearConversationHistory(ctx context.Context, userID int64) error {
-	key := fmt.Sprintf("conversation:%d", userID)
+func clearConversationHistory(ctx context.Context, userID int64, model string) error {
+	key := fmt.Sprintf("conversation:%d:%s", userID, model)
 	return rdb.Del(ctx, key).Err()
 }
 
-func getUserModel(ctx context.Context, userID int64) (string, error) {
-	key := fmt.Sprintf("user:%d:model", userID)
-	model, err := rdb.Get(ctx, key).Result()
+func getUserModels(ctx context.Context, userID int64) ([]string, error) {
+	key := fmt.Sprintf("user:%d:models", userID)
+	models, err := rdb.SMembers(ctx, key).Result()
 	if err == redis.Nil {
-		// If no model is set, return default model from config
-		return config.OpenRouterModel, nil
+		// If no models are set, return default model from config
+		return []string{config.OpenRouterModel}, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("redis get error: %w", err)
+		return nil, fmt.Errorf("redis get error: %w", err)
 	}
-	return model, nil
+	if len(models) == 0 {
+		return []string{config.OpenRouterModel}, nil
+	}
+	return models, nil
 }
 
-func setUserModel(ctx context.Context, userID int64, model string) error {
-	key := fmt.Sprintf("user:%d:model", userID)
-	return rdb.Set(ctx, key, model, 0).Err()
+func addUserModel(ctx context.Context, userID int64, model string) error {
+	key := fmt.Sprintf("user:%d:models", userID)
+	return rdb.SAdd(ctx, key, model).Err()
+}
+
+func removeUserModel(ctx context.Context, userID int64, model string) error {
+	key := fmt.Sprintf("user:%d:models", userID)
+	return rdb.SRem(ctx, key, model).Err()
+}
+
+func clearUserModels(ctx context.Context, userID int64) error {
+	key := fmt.Sprintf("user:%d:models", userID)
+	return rdb.Del(ctx, key).Err()
 }
 
 func getUserMode(ctx context.Context, userID int64) (string, error) {

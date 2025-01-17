@@ -275,7 +275,23 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	// If no target model (new conversation or not replying to a model), use all selected models
+	// If no target model (new conversation or not replying to a model)
+	// For the first message, get responses from all models
+	history, err := getConversationHistory(context.Background(), userID, selectedModels[0])
+	if err != nil {
+		logMessage(userID, username, "error", "Failed to get conversation history")
+		history = []Message{}
+	}
+
+	// If this is not the first message and user didn't reply to a specific model
+	if len(history) > 0 {
+		_, err = msg.Reply(b, "Please reply to a specific model's message to continue the conversation.", &gotgbot.SendMessageOpts{
+			ReplyMarkup: getKeyboard(userMode),
+		})
+		return err
+	}
+
+	// For first message, use all selected models
 	for _, model := range selectedModels {
 		// Get conversation history for this model
 		history, err := getConversationHistory(context.Background(), userID, model)

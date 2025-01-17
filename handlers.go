@@ -426,11 +426,8 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 			return err
 		}
 
-		// Show confirmation to user
-		_, err = callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
-			Text:      "Image model set to: " + selectedModel,
-			ShowAlert: true,
-		})
+		// Acknowledge the callback without showing alert
+		_, err = callback.Answer(b, nil)
 		return err
 	} else if len(data) > 6 && data[:6] == "model:" {
 		selectedModel := data[6:]
@@ -462,11 +459,8 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 			return err
 		}
 
-		// Show confirmation to user
-		_, err = callback.Answer(b, &gotgbot.AnswerCallbackQueryOpts{
-			Text:      "Model set to: " + selectedModel,
-			ShowAlert: true,
-		})
+		// Acknowledge the callback without showing alert
+		_, err = callback.Answer(b, nil)
 		return err
 	}
 

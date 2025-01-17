@@ -36,7 +36,14 @@ func initConfig() {
 	// Parse available models from environment variable
 	availableModels := []string{"google/gemini-flash-1.5"} // default model
 	if models := os.Getenv("AVAILABLE_MODELS"); models != "" {
-		availableModels = strings.Split(models, ",")
+		// Split by comma and filter out empty strings
+		modelsList := strings.Split(models, ",")
+		availableModels = make([]string, 0, len(modelsList))
+		for _, model := range modelsList {
+			if trimmed := strings.TrimSpace(model); trimmed != "" {
+				availableModels = append(availableModels, trimmed)
+			}
+		}
 	}
 
 	// Parse allowed users from environment variable
@@ -53,7 +60,14 @@ func initConfig() {
 	// Parse available image models from environment variable
 	imgModels := []string{"black-forest-labs/FLUX.1-schnell"} // default model
 	if models := os.Getenv("AVAILABLE_IMG_MODELS"); models != "" {
-		imgModels = strings.Split(models, ",")
+		// Split by comma and filter out empty strings
+		modelsList := strings.Split(models, ",")
+		imgModels = make([]string, 0, len(modelsList))
+		for _, model := range modelsList {
+			if trimmed := strings.TrimSpace(model); trimmed != "" {
+				imgModels = append(imgModels, trimmed)
+			}
+		}
 	}
 
 	config = Config{

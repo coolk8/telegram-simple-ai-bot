@@ -592,8 +592,8 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 
 		// Update message with new keyboard
 		_, _, err = b.EditMessageText("Choose models for text chat (select multiple):", &gotgbot.EditMessageTextOpts{
-			ChatId:      callback.Message.Chat.Id,
-			MessageId:   callback.Message.MessageId,
+			ChatId:      callback.Message.GetChat().Id,
+			MessageId:   callback.Message.GetMessageId(),
 			ReplyMarkup: gotgbot.InlineKeyboardMarkup{InlineKeyboard: buttons},
 		})
 		if err != nil {
@@ -618,8 +618,8 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 		// Update message to show final selection
 		modelsList := strings.Join(selectedModels, "\n")
 		_, _, err = b.EditMessageText(fmt.Sprintf("Selected models:\n%s", modelsList), &gotgbot.EditMessageTextOpts{
-			ChatId:      callback.Message.Chat.Id,
-			MessageId:   callback.Message.MessageId,
+			ChatId:      callback.Message.GetChat().Id,
+			MessageId:   callback.Message.GetMessageId(),
 			ParseMode:   "HTML",
 			ReplyMarkup: gotgbot.InlineKeyboardMarkup{},
 		})

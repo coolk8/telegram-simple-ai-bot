@@ -203,7 +203,7 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		selectedModels = []string{config.OpenRouterModel} // fallback to default
 	}
 
-	// If this is a reply to a model's response, use that model
+	// Check if this is a reply to a model's response
 	replyToMsg := msg.ReplyToMessage
 	var targetModel string
 	if replyToMsg != nil && replyToMsg.From.Id == b.Id {
@@ -214,9 +214,21 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 				targetModel = text[1 : idx+1]
 			}
 		}
+
+		// Verify the model is still in user's selected models
+		isValidModel := false
+		for _, model := range selectedModels {
+			if model == targetModel {
+				isValidModel = true
+				break
+			}
+		}
+		if !isValidModel {
+			targetModel = ""
+		}
 	}
 
-	// If we have a target model (user replied to a specific model's message)
+	// If we have a valid target model (replying to a specific model's message)
 	if targetModel != "" {
 		// Get conversation history for this model
 		history, err := getConversationHistory(context.Background(), userID, targetModel)

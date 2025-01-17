@@ -3,7 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -45,10 +50,12 @@ type OpenRouterResponse struct {
 // OpenRouterModelsResponse represents the response from OpenRouter's models endpoint
 type OpenRouterModelsResponse struct {
 	Data []struct {
-		ID     string `json:"id"`
-		Pricing struct {
-			Prompt   float64 `json:"prompt"`
-			Completion float64 `json:"completion"`
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Pricing     struct {
+			Prompt     string `json:"prompt"`
+			Completion string `json:"completion"`
 		} `json:"pricing"`
 	} `json:"data"`
 }
@@ -62,7 +69,7 @@ func FetchModelPricing() (map[string]ModelInfo, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+config.OpenRouterAPIKey)
+	req.Header.Set("Accept", "application/json")
 	
 	resp, err := client.Do(req)
 	if err != nil {
@@ -70,21 +77,57 @@ func FetchModelPricing() (map[string]ModelInfo, error) {
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var modelsResp OpenRouterModelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := json.Unmarshal(body, &modelsResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w, body: %s", err, string(body))
+	}
+
+	// Get list of our configured models from environment
+	configuredModels := make(map[string]bool)
+	if models := os.Getenv("AVAILABLE_MODELS"); models != "" {
+		for _, model := range strings.Split(models, ",") {
+			if trimmed := strings.TrimSpace(model); trimmed != "" {
+				configuredModels[trimmed] = true
+			}
+		}
+	} else {
+		// Use default model if none configured
+		configuredModels["google/gemini-flash-1.5"] = true
 	}
 
 	modelPricing := make(map[string]ModelInfo)
 	for _, model := range modelsResp.Data {
+		// Only process models that are in our configuration
+		if !configuredModels[model.ID] {
+			continue
+		}
+
+		// Parse pricing from scientific notation strings to float64
+		promptPrice, err := strconv.ParseFloat(model.Pricing.Prompt, 64)
+		if err != nil {
+			log.Printf("[Warning] Failed to parse prompt price for model %s: %v", model.ID, err)
+			continue
+		}
+
+		completionPrice, err := strconv.ParseFloat(model.Pricing.Completion, 64)
+		if err != nil {
+			log.Printf("[Warning] Failed to parse completion price for model %s: %v", model.ID, err)
+			continue
+		}
+
 		modelPricing[model.ID] = ModelInfo{
 			ID:       model.ID,
-			PriceIn:  model.Pricing.Prompt,
-			PriceOut: model.Pricing.Completion,
+			PriceIn:  promptPrice,
+			PriceOut: completionPrice,
 		}
 	}
 

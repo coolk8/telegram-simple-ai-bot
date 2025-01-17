@@ -196,36 +196,49 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	}
 
 	// Text mode - handle normal conversation
+	logMessage(userID, username, "debug", "Starting text mode handling")
+
 	// Get user's selected models
 	selectedModels, err := getUserModels(context.Background(), userID)
 	if err != nil {
 		logMessage(userID, username, "error", "Failed to get user models")
 		selectedModels = []string{config.OpenRouterModel} // fallback to default
 	}
+	logMessage(userID, username, "debug", fmt.Sprintf("Selected models: %v", selectedModels))
 
 	// Check if this is a reply to a model's response
 	replyToMsg := msg.ReplyToMessage
 	var targetModel string
-	if replyToMsg != nil && replyToMsg.From.Id == b.Id {
-		// Extract model name from the response (it's in italics at the start)
-		text := replyToMsg.Text
-		if strings.HasPrefix(text, "_") {
-			if idx := strings.Index(text[1:], "_"); idx != -1 {
-				targetModel = text[1 : idx+1]
+	if replyToMsg != nil {
+		logMessage(userID, username, "debug", fmt.Sprintf("Reply detected. Bot ID: %d, Message From ID: %d", b.Id, replyToMsg.From.Id))
+		if replyToMsg.From.Id == b.Id {
+			// Extract model name from the response (it's in italics at the start)
+			text := replyToMsg.Text
+			logMessage(userID, username, "debug", fmt.Sprintf("Reply message text: %s", text))
+			if strings.HasPrefix(text, "_") {
+				if idx := strings.Index(text[1:], "_"); idx != -1 {
+					targetModel = text[1 : idx+1]
+					logMessage(userID, username, "debug", fmt.Sprintf("Extracted target model: %s", targetModel))
+				}
 			}
-		}
 
-		// Verify the model is still in user's selected models
-		isValidModel := false
-		for _, model := range selectedModels {
-			if model == targetModel {
-				isValidModel = true
-				break
+			// Verify the model is still in user's selected models
+			isValidModel := false
+			for _, model := range selectedModels {
+				if model == targetModel {
+					isValidModel = true
+					break
+				}
 			}
+			if !isValidModel {
+				logMessage(userID, username, "debug", fmt.Sprintf("Model %s is not in selected models", targetModel))
+				targetModel = ""
+			}
+		} else {
+			logMessage(userID, username, "debug", "Reply is not to a bot message")
 		}
-		if !isValidModel {
-			targetModel = ""
-		}
+	} else {
+		logMessage(userID, username, "debug", "Not a reply message")
 	}
 
 	// If we have a valid target model (replying to a specific model's message)
@@ -275,66 +288,80 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		return err
 	}
 
-	// If no target model (new conversation or not replying to a model)
-	// For the first message, get responses from all models
-	history, err := getConversationHistory(context.Background(), userID, selectedModels[0])
-	if err != nil {
-		logMessage(userID, username, "error", "Failed to get conversation history")
-		history = []Message{}
-	}
-
-	// If this is not the first message and user didn't reply to a specific model
-	if len(history) > 0 {
-		_, err = msg.Reply(b, "Please reply to a specific model's message to continue the conversation.", &gotgbot.SendMessageOpts{
-			ReplyMarkup: getKeyboard(userMode),
-		})
-		return err
-	}
-
-	// For first message, use all selected models
-	for _, model := range selectedModels {
-		// Get conversation history for this model
-		history, err := getConversationHistory(context.Background(), userID, model)
-		if err != nil {
-			logMessage(userID, username, "error", "Failed to get conversation history")
-			history = []Message{}
+	// If no target model (not replying to a model's message)
+	if targetModel == "" {
+		logMessage(userID, username, "debug", "No target model, checking if this is first message")
+		
+		// Check if any model has conversation history
+		hasHistory := false
+		for _, model := range selectedModels {
+			history, err := getConversationHistory(context.Background(), userID, model)
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("Failed to get history for model %s: %v", model, err))
+				continue
+			}
+			if len(history) > 0 {
+				hasHistory = true
+				break
+			}
+		}
+		
+		// If there's existing conversation, ask to reply to a specific model
+		if hasHistory {
+			logMessage(userID, username, "debug", "Existing conversation found, requesting reply to specific model")
+			_, err = msg.Reply(b, "Please reply to a specific model's message to continue the conversation.", &gotgbot.SendMessageOpts{
+				ReplyMarkup: getKeyboard(userMode),
+			})
+			return err
 		}
 
-		// If history is empty, add system prompt if configured
-		if len(history) == 0 && config.SystemPrompt != "" {
-			history = append(history, Message{Role: "system", Content: config.SystemPrompt})
+		// This is the first message, use all selected models
+		logMessage(userID, username, "debug", "No existing conversation, using all models")
+		for _, model := range selectedModels {
+			// Get conversation history for this model
+			history, err := getConversationHistory(context.Background(), userID, model)
+			if err != nil {
+				logMessage(userID, username, "error", "Failed to get conversation history")
+				history = []Message{}
+			}
+
+			// If history is empty, add system prompt if configured
+			if len(history) == 0 && config.SystemPrompt != "" {
+				history = append(history, Message{Role: "system", Content: config.SystemPrompt})
+			}
+
+			// Add user message to history
+			history = append(history, Message{Role: "user", Content: msg.Text})
+
+			// Call OpenRouter API with this model
+			aiResponse, err := callOpenRouter(context.Background(), userID, username, history, model)
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] %s", model, err.Error()))
+				continue // Try next model instead of failing completely
+			}
+
+			// Add AI response to history
+			history = append(history, Message{Role: "assistant", Content: aiResponse})
+
+			// Save updated conversation history
+			if err := saveConversationHistory(context.Background(), userID, model, history); err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to save conversation history", model))
+			}
+
+			// Log AI response
+			logMessage(userID, username, "ai_response", fmt.Sprintf("[%s] %s", model, aiResponse))
+
+			// Format response with model name in italics
+			formattedResponse := fmt.Sprintf("_%s_\n\n%s", model, aiResponse)
+			_, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+				ReplyMarkup: getKeyboard(userMode),
+				ParseMode:   "Markdown",
+			})
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response", model))
+			}
 		}
-
-		// Add user message to history
-		history = append(history, Message{Role: "user", Content: msg.Text})
-
-		// Call OpenRouter API with this model
-		aiResponse, err := callOpenRouter(context.Background(), userID, username, history, model)
-		if err != nil {
-			logMessage(userID, username, "error", fmt.Sprintf("[%s] %s", model, err.Error()))
-			continue // Try next model instead of failing completely
-		}
-
-		// Add AI response to history
-		history = append(history, Message{Role: "assistant", Content: aiResponse})
-
-		// Save updated conversation history
-		if err := saveConversationHistory(context.Background(), userID, model, history); err != nil {
-			logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to save conversation history", model))
-		}
-
-		// Log AI response
-		logMessage(userID, username, "ai_response", fmt.Sprintf("[%s] %s", model, aiResponse))
-
-		// Format response with model name in italics
-		formattedResponse := fmt.Sprintf("_%s_\n\n%s", model, aiResponse)
-		_, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
-			ReplyMarkup: getKeyboard(userMode),
-			ParseMode:   "Markdown",
-		})
-		if err != nil {
-			logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response", model))
-		}
+		return nil
 	}
 	return nil
 }

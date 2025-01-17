@@ -323,8 +323,8 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 		// Add checkmark and pricing for current model
 		modelText := modelInfo.ID
 		if modelInfo.PriceIn > 0 || modelInfo.PriceOut > 0 {
-			avgPrice := (modelInfo.PriceIn + modelInfo.PriceOut) / 2
-			modelText = fmt.Sprintf("%s ($%.3f/1M tokens)", modelInfo.ID, avgPrice)
+			modelText = fmt.Sprintf("%s (In: $%.2f, Out: $%.2f per 1M tokens)", 
+				modelInfo.ID, modelInfo.PriceIn, modelInfo.PriceOut)
 		}
 		if modelInfo.ID == currentModel {
 			modelText = "✅ " + modelText
@@ -464,8 +464,8 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 		// Update the message to show selected model with pricing
 		modelText := selectedModel
 		if selectedModelInfo.PriceIn > 0 || selectedModelInfo.PriceOut > 0 {
-			avgPrice := (selectedModelInfo.PriceIn + selectedModelInfo.PriceOut) / 2
-			modelText = fmt.Sprintf("%s ($%.3f/1M tokens)", selectedModel, avgPrice)
+			modelText = fmt.Sprintf("%s (In: $%.2f, Out: $%.2f per 1M tokens)", 
+				selectedModel, selectedModelInfo.PriceIn, selectedModelInfo.PriceOut)
 		}
 		_, _, err := b.EditMessageText("Selected model: "+modelText, &gotgbot.EditMessageTextOpts{
 			ChatId:      msg.GetChat().Id,

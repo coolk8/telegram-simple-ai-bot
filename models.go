@@ -111,23 +111,27 @@ func FetchModelPricing() (map[string]ModelInfo, error) {
 			continue
 		}
 
-		// Parse pricing from scientific notation strings to float64
+		// Parse pricing from scientific notation strings to float64 and convert to price per million tokens
 		promptPrice, err := strconv.ParseFloat(model.Pricing.Prompt, 64)
 		if err != nil {
 			log.Printf("[Warning] Failed to parse prompt price for model %s: %v", model.ID, err)
 			continue
 		}
+		// Convert to price per million tokens
+		promptPrice = promptPrice * 1_000_000
 
 		completionPrice, err := strconv.ParseFloat(model.Pricing.Completion, 64)
 		if err != nil {
 			log.Printf("[Warning] Failed to parse completion price for model %s: %v", model.ID, err)
 			continue
 		}
+		// Convert to price per million tokens
+		completionPrice = completionPrice * 1_000_000
 
 		modelPricing[model.ID] = ModelInfo{
 			ID:       model.ID,
-			PriceIn:  promptPrice,
-			PriceOut: completionPrice,
+			PriceIn:  promptPrice,     // Price per 1M input tokens
+			PriceOut: completionPrice, // Price per 1M output tokens
 		}
 	}
 

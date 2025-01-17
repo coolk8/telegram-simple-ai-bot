@@ -116,6 +116,25 @@ func setUserImageModel(ctx context.Context, userID int64, model string) error {
 	return rdb.Set(ctx, key, model, 0).Err()
 }
 
+// saveMessageModel stores the mapping between a message ID and its model
+func saveMessageModel(ctx context.Context, messageID int64, model string) error {
+	key := fmt.Sprintf("message:%d:model", messageID)
+	return rdb.Set(ctx, key, model, 0).Err()
+}
+
+// getMessageModel retrieves the model associated with a message ID
+func getMessageModel(ctx context.Context, messageID int64) (string, error) {
+	key := fmt.Sprintf("message:%d:model", messageID)
+	model, err := rdb.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return "", fmt.Errorf("no model found for message %d", messageID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis get error: %w", err)
+	}
+	return model, nil
+}
+
 func saveUserImage(ctx context.Context, userID int64, fileID string, prompt string) error {
 	key := fmt.Sprintf("user:%d:images", userID)
 	imageData := map[string]string{

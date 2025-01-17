@@ -212,14 +212,13 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	if replyToMsg != nil {
 		logMessage(userID, username, "debug", fmt.Sprintf("Reply detected. Bot ID: %d, Message From ID: %d", b.Id, replyToMsg.From.Id))
 		if replyToMsg.From.Id == b.Id {
-			// Extract model name from the response (it's in italics at the start)
-			text := replyToMsg.Text
-			logMessage(userID, username, "debug", fmt.Sprintf("Reply message text: %s", text))
-			if strings.HasPrefix(text, "_") {
-				if idx := strings.Index(text[1:], "_"); idx != -1 {
-					targetModel = text[1 : idx+1]
-					logMessage(userID, username, "debug", fmt.Sprintf("Extracted target model: %s", targetModel))
-				}
+			// Get model from message ID mapping
+			model, err := getMessageModel(context.Background(), replyToMsg.MessageId)
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("Failed to get model for message %d: %v", replyToMsg.MessageId, err))
+			} else {
+				targetModel = model
+				logMessage(userID, username, "debug", fmt.Sprintf("Found model %s for message %d", model, replyToMsg.MessageId))
 			}
 
 			// Verify the model is still in user's selected models
@@ -281,11 +280,19 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 		// Format response with model name in italics
 		formattedResponse := fmt.Sprintf("_%s_\n\n%s", targetModel, aiResponse)
-		_, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+		resp, err := msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
 			ReplyMarkup: getKeyboard(userMode),
 			ParseMode:   "Markdown",
 		})
-		return err
+		if err != nil {
+			return err
+		}
+
+		// Save the message ID with its associated model
+		if err := saveMessageModel(context.Background(), resp.MessageId, targetModel); err != nil {
+			logMessage(userID, username, "error", "Failed to save message model mapping")
+		}
+		return nil
 	}
 
 	// If no target model (not replying to a model's message)
@@ -353,12 +360,18 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 			// Format response with model name in italics
 			formattedResponse := fmt.Sprintf("_%s_\n\n%s", model, aiResponse)
-			_, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+			resp, err := msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
 				ReplyMarkup: getKeyboard(userMode),
 				ParseMode:   "Markdown",
 			})
 			if err != nil {
 				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response", model))
+				continue
+			}
+
+			// Save the message ID with its associated model
+			if err := saveMessageModel(context.Background(), resp.MessageId, model); err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to save message model mapping", model))
 			}
 		}
 		return nil

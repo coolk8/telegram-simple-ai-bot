@@ -21,8 +21,10 @@ type ModelInfo struct {
 
 // Message represents a chat message structure
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	ID      string `json:"id"`      // Unique message ID
+	Role    string `json:"role"`    // Role (user/assistant/system)
+	Content string `json:"content"` // Message content
+	Model   string `json:"model"`   // Model that generated this message (for assistant messages)
 }
 
 // OpenRouterRequest represents the request structure for OpenRouter API

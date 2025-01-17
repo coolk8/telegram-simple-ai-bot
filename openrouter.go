@@ -53,7 +53,18 @@ func callOpenRouter(ctx context.Context, userID int64, username string, messages
 	logMessage(userID, username, "openrouter_response", fmt.Sprintf("Status: %d, Response length: %d", resp.StatusCode, len(respBody)))
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenRouter API returned status: %d", resp.StatusCode)
+		// Try to parse error response
+		var errorResp OpenRouterErrorResponse
+		if err := json.Unmarshal(respBody, &errorResp); err == nil && errorResp.Error.Message != "" {
+			logMessage(userID, username, "openrouter_error", fmt.Sprintf("Status: %d, Error type: %s, message: %s", 
+				resp.StatusCode, errorResp.Error.Type, errorResp.Error.Message))
+			return "", fmt.Errorf("OpenRouter API error (status %d): %s - %s", 
+				resp.StatusCode, errorResp.Error.Type, errorResp.Error.Message)
+		}
+		// If error parsing fails, log raw response
+		logMessage(userID, username, "openrouter_error", fmt.Sprintf("Status: %d, Raw response: %s", 
+			resp.StatusCode, string(respBody)))
+		return "", fmt.Errorf("OpenRouter API returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var openRouterResp OpenRouterResponse

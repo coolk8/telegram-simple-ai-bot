@@ -13,7 +13,14 @@ type OpenRouterRequest struct {
 	Messages []Message `json:"messages"`
 }
 
-// OpenRouterResponse represents the response structure from OpenRouter API
+// OpenRouterErrorResponse represents the error response structure from OpenRouter API
+type OpenRouterErrorResponse struct {
+	Error struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	} `json:"error"`
+}
+
 type OpenRouterResponse struct {
 	Choices []struct {
 		Message struct {

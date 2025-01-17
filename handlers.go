@@ -317,16 +317,20 @@ func handleSetModels(b *gotgbot.Bot, ctx *ext.Context) error {
 		currentModel = ""
 	}
 
-	// Create inline keyboard with model options
+	// Create inline keyboard with model options including pricing
 	var buttons [][]gotgbot.InlineKeyboardButton
-	for _, model := range config.AvailableModels {
-		// Add checkmark for current model
-		modelText := model
-		if model == currentModel {
-			modelText = "✅ " + model
+	for _, modelInfo := range config.AvailableModels {
+		// Add checkmark and pricing for current model
+		modelText := modelInfo.ID
+		if modelInfo.PriceIn > 0 || modelInfo.PriceOut > 0 {
+			avgPrice := (modelInfo.PriceIn + modelInfo.PriceOut) / 2
+			modelText = fmt.Sprintf("%s ($%.3f/1M tokens)", modelInfo.ID, avgPrice)
+		}
+		if modelInfo.ID == currentModel {
+			modelText = "✅ " + modelText
 		}
 		buttons = append(buttons, []gotgbot.InlineKeyboardButton{
-			{Text: modelText, CallbackData: "model:" + model},
+			{Text: modelText, CallbackData: "model:" + modelInfo.ID},
 		})
 	}
 
@@ -432,6 +436,15 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 	} else if len(data) > 6 && data[:6] == "model:" {
 		selectedModel := data[6:]
 
+		// Find selected model info
+		var selectedModelInfo ModelInfo
+		for _, info := range config.AvailableModels {
+			if info.ID == selectedModel {
+				selectedModelInfo = info
+				break
+			}
+		}
+
 		// Save user's model preference
 		if err := setUserModel(context.Background(), userID, selectedModel); err != nil {
 			logMessage(userID, username, "error", "Failed to save model preference")
@@ -448,8 +461,13 @@ func handleCallback(b *gotgbot.Bot, ctx *ext.Context) error {
 			return fmt.Errorf("callback message is nil")
 		}
 
-		// Update the message to show selected model
-		_, _, err := b.EditMessageText("Selected model: "+selectedModel, &gotgbot.EditMessageTextOpts{
+		// Update the message to show selected model with pricing
+		modelText := selectedModel
+		if selectedModelInfo.PriceIn > 0 || selectedModelInfo.PriceOut > 0 {
+			avgPrice := (selectedModelInfo.PriceIn + selectedModelInfo.PriceOut) / 2
+			modelText = fmt.Sprintf("%s ($%.3f/1M tokens)", selectedModel, avgPrice)
+		}
+		_, _, err := b.EditMessageText("Selected model: "+modelText, &gotgbot.EditMessageTextOpts{
 			ChatId:      msg.GetChat().Id,
 			MessageId:   msg.GetMessageId(),
 			ParseMode:   "HTML",

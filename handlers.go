@@ -376,13 +376,102 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 			}
 		}
 		
-		// If there's existing conversation, ask to reply to a specific model
-		if hasHistory {
-			logMessage(userID, username, "debug", "Existing conversation found, requesting reply to specific model")
+		// If there's existing conversation and multiple models are selected, ask to reply to a specific model
+		if hasHistory && len(selectedModels) > 1 {
+			logMessage(userID, username, "debug", "Multiple models with existing conversation found, requesting reply to specific model")
 			_, err = msg.Reply(b, "Please reply to a specific model's message to continue the conversation.", &gotgbot.SendMessageOpts{
 				ReplyMarkup: getKeyboard(userMode),
 			})
 			return err
+		}
+
+		// If only one model is selected, use that model for direct messages
+		if len(selectedModels) == 1 {
+			model := selectedModels[0]
+			logMessage(userID, username, "debug", fmt.Sprintf("Single model selected (%s), continuing conversation", model))
+			
+			// Get conversation history for this model
+			history, err := getConversationHistory(context.Background(), userID, model)
+			if err != nil {
+				logMessage(userID, username, "error", "Failed to get conversation history")
+				history = []Message{}
+			}
+
+			// If history is empty, add system prompt if configured
+			if len(history) == 0 && config.SystemPrompt != "" {
+				history = append(history, Message{Role: "system", Content: config.SystemPrompt})
+			}
+
+			// Add user message to history
+			history = append(history, Message{Role: "user", Content: msg.Text})
+
+			// Call OpenRouter API with this model
+			aiResponse, err := callOpenRouter(context.Background(), userID, username, history, model)
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] %s", model, err.Error()))
+				_, err := msg.Reply(b, "Sorry, I encountered an error processing your request.", &gotgbot.SendMessageOpts{
+					ReplyMarkup: getKeyboard(userMode),
+				})
+				return err
+			}
+
+			// Add AI response to history
+			history = append(history, Message{Role: "assistant", Content: aiResponse})
+
+			// Save updated conversation history
+			if err := saveConversationHistory(context.Background(), userID, model, history); err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to save conversation history", model))
+			}
+
+			// Log AI response
+			logMessage(userID, username, "ai_response", fmt.Sprintf("[%s] %s", model, aiResponse))
+
+			// Format response with model name in italics
+			formattedResponse := fmt.Sprintf("_%s_\n\n%s", model, aiResponse)
+			
+			// Split message if it's too long
+			const maxLength = 4000 // Leave some room for formatting
+			var resp *gotgbot.Message
+			
+			if len(formattedResponse) > maxLength {
+				parts := splitMessage(formattedResponse, maxLength)
+				for i, part := range parts {
+					opts := &gotgbot.SendMessageOpts{
+						ReplyMarkup: getKeyboard(userMode),
+						ParseMode:   "Markdown",
+					}
+					
+					// Only first part replies to original message
+					if i == 0 {
+						opts.ReplyParameters = &gotgbot.ReplyParameters{
+							MessageId: msg.MessageId,
+						}
+					}
+					
+					partResp, err := msg.Reply(b, part, opts)
+					if err != nil {
+						logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send message part %d: %v", model, i+1, err))
+						continue
+					}
+					resp = partResp // Keep track of last response for message model mapping
+				}
+			} else {
+				var err error
+				resp, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+					ReplyMarkup: getKeyboard(userMode),
+					ParseMode:   "Markdown",
+				})
+				if err != nil {
+					logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response: %v", model, err))
+					return err
+				}
+			}
+
+			// Save the message ID with its associated model
+			if err := saveMessageModel(context.Background(), resp.MessageId, model); err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to save message model mapping", model))
+			}
+			return nil
 		}
 
 		// This is the first message, use all selected models

@@ -9,6 +9,38 @@ import (
 	"github.com/PaulSonOfLars/gotgbot/v2/ext"
 )
 
+// splitMessage splits a message into parts that fit within maxLength while preserving markdown
+func splitMessage(message string, maxLength int) []string {
+	if len(message) <= maxLength {
+		return []string{message}
+	}
+
+	var parts []string
+	currentPart := ""
+	lines := strings.Split(message, "\n")
+	
+	// First line contains model name in italics, handle separately
+	modelLine := lines[0]
+	currentPart = modelLine + "\n\n"
+	
+	for i := 2; i < len(lines); i++ { // Start from 2 to skip empty line after model name
+		line := lines[i]
+		if len(currentPart)+len(line)+1 > maxLength {
+			// If adding this line would exceed maxLength, start new part
+			parts = append(parts, strings.TrimSpace(currentPart))
+			currentPart = modelLine + "\n\n" + line + "\n" // Include model name in new part
+		} else {
+			currentPart += line + "\n"
+		}
+	}
+	
+	if len(currentPart) > 0 {
+		parts = append(parts, strings.TrimSpace(currentPart))
+	}
+	
+	return parts
+}
+
 func isImageGenerationEnabled() bool {
 	return config.TogetherAPIKey != ""
 }
@@ -280,12 +312,43 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 		// Format response with model name in italics
 		formattedResponse := fmt.Sprintf("_%s_\n\n%s", targetModel, aiResponse)
-		resp, err := msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
-			ReplyMarkup: getKeyboard(userMode),
-			ParseMode:   "Markdown",
-		})
-		if err != nil {
-			return err
+		
+		// Split message if it's too long (Telegram limit is 4096 characters)
+		const maxLength = 4000 // Leave some room for formatting
+		var resp *gotgbot.Message
+		
+		if len(formattedResponse) > maxLength {
+			parts := splitMessage(formattedResponse, maxLength)
+			for i, part := range parts {
+				opts := &gotgbot.SendMessageOpts{
+					ReplyMarkup: getKeyboard(userMode),
+					ParseMode:   "Markdown",
+				}
+				
+				// Only first part replies to original message
+				if i == 0 {
+					opts.ReplyParameters = &gotgbot.ReplyParameters{
+						MessageId: msg.MessageId,
+					}
+				}
+				
+				partResp, err := msg.Reply(b, part, opts)
+				if err != nil {
+					logMessage(userID, username, "error", fmt.Sprintf("Failed to send message part %d: %v", i+1, err))
+					return fmt.Errorf("failed to send message part %d: %w", i+1, err)
+				}
+				resp = partResp // Keep track of last response for message model mapping
+			}
+		} else {
+			var err error
+			resp, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+				ReplyMarkup: getKeyboard(userMode),
+				ParseMode:   "Markdown",
+			})
+			if err != nil {
+				logMessage(userID, username, "error", fmt.Sprintf("Failed to send message: %v", err))
+				return fmt.Errorf("failed to send message: %w", err)
+			}
 		}
 
 		// Save the message ID with its associated model
@@ -360,13 +423,43 @@ func handleMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 
 			// Format response with model name in italics
 			formattedResponse := fmt.Sprintf("_%s_\n\n%s", model, aiResponse)
-			resp, err := msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
-				ReplyMarkup: getKeyboard(userMode),
-				ParseMode:   "Markdown",
-			})
-			if err != nil {
-				logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response", model))
-				continue
+			
+			// Split message if it's too long
+			const maxLength = 4000 // Leave some room for formatting
+			var resp *gotgbot.Message
+			
+			if len(formattedResponse) > maxLength {
+				parts := splitMessage(formattedResponse, maxLength)
+				for i, part := range parts {
+					opts := &gotgbot.SendMessageOpts{
+						ReplyMarkup: getKeyboard(userMode),
+						ParseMode:   "Markdown",
+					}
+					
+					// Only first part replies to original message
+					if i == 0 {
+						opts.ReplyParameters = &gotgbot.ReplyParameters{
+							MessageId: msg.MessageId,
+						}
+					}
+					
+					partResp, err := msg.Reply(b, part, opts)
+					if err != nil {
+						logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send message part %d: %v", model, i+1, err))
+						continue
+					}
+					resp = partResp // Keep track of last response for message model mapping
+				}
+			} else {
+				var err error
+				resp, err = msg.Reply(b, formattedResponse, &gotgbot.SendMessageOpts{
+					ReplyMarkup: getKeyboard(userMode),
+					ParseMode:   "Markdown",
+				})
+				if err != nil {
+					logMessage(userID, username, "error", fmt.Sprintf("[%s] Failed to send response: %v", model, err))
+					continue
+				}
 			}
 
 			// Save the message ID with its associated model

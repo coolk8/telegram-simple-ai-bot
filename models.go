@@ -29,8 +29,9 @@ type Message struct {
 
 // OpenRouterRequest represents the request structure for OpenRouter API
 type OpenRouterRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
+	Model     string    `json:"model"`
+	Messages  []Message `json:"messages"`
+	MaxTokens int       `json:"max_tokens,omitempty"`
 }
 
 // OpenRouterErrorResponse represents the error response structure from OpenRouter API

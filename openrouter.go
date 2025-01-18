@@ -19,8 +19,9 @@ func callOpenRouter(ctx context.Context, userID int64, username string, messages
 	}
 
 	reqBody := OpenRouterRequest{
-		Model:    model,
-		Messages: messages,
+		Model:     model,
+		Messages:  messages,
+		MaxTokens: 4000, // Limit response to 4000 tokens
 	}
 	reqData, err := json.Marshal(reqBody)
 	if err != nil {
